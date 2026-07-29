@@ -1,0 +1,13 @@
+# 密钥（绝不随包提交）
+*.key
+.env
+*.local.json
+
+# 运行时数据
+memory.md
+profiles/
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/

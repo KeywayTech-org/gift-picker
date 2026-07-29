@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{PAGE_TITLE}}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root{--bg:#faf7f5;--card:#ffffff;--ink:#2b2b2b;--muted:#8a8a8a;--accent:#e05a6d;--accent2:#f2b6c0;--good:#3aa675;--warn:#e0a13a;--bad:#d05050;--line:#eee4e6}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 16px}
+  header{text-align:center;padding:28px 0 12px}
+  header h1{font-size:26px;letter-spacing:1px}
+  header .meta{color:var(--muted);font-size:13px;margin-top:8px}
+  .summary{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}
+  .summary .top1{font-size:15px;background:#fdf0f2;border-left:4px solid var(--accent);padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:16px}
+  .radar-box{max-width:520px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:18px 0;position:relative}
+  .badge-top{position:absolute;top:-10px;left:16px;background:var(--accent);color:#fff;font-size:12px;padding:3px 12px;border-radius:99px}
+  .card-head{display:flex;gap:16px;flex-wrap:wrap}
+  .gift-img{width:150px;height:150px;object-fit:cover;border-radius:12px;background:#f3ecee;flex-shrink:0}
+  .head-info{flex:1;min-width:220px}
+  .gift-name{font-size:19px;font-weight:600;margin-bottom:6px}
+  .price-line{display:flex;align-items:baseline;gap:10px;margin:6px 0}
+  .price{font-size:26px;color:var(--accent);font-weight:700}
+  .conf{font-size:11px;padding:2px 8px;border-radius:99px;color:#fff}
+  .conf.high{background:var(--good)}.conf.mid{background:var(--warn)}.conf.low{background:var(--bad)}
+  .score-big{font-size:34px;font-weight:800;color:var(--ink)}
+  .score-big small{font-size:13px;color:var(--muted);font-weight:400}
+  .bars{margin:12px 0}
+  .bar-row{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:13px}
+  .bar-row .label{width:88px;color:var(--muted);text-align:right}
+  .bar{flex:1;height:8px;background:#f0e7e9;border-radius:99px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:99px}
+  .bar-row .val{width:34px;font-weight:600}
+  .match-tags{margin:8px 0}
+  .tag{display:inline-block;font-size:12px;background:#fdf0f2;color:var(--accent);border:1px solid var(--accent2);padding:2px 10px;border-radius:99px;margin:2px 4px 2px 0}
+  .section-t{font-size:14px;font-weight:600;margin:14px 0 6px;color:var(--accent)}
+  .analysis ul{padding-left:20px;font-size:14px}
+  .risk{background:#fff8ef;border-left:3px solid var(--warn);padding:8px 12px;font-size:13px;border-radius:0 8px 8px 0;margin-top:8px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--muted);font-weight:500;background:#fbf5f6}
+  td a{color:var(--accent);text-decoration:none}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:24px 12px;border-top:1px solid var(--line);margin-top:28px}
+  @media (max-width:600px){.gift-img{width:100%;height:200px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>{{PAGE_TITLE}}</h1>
+    <div class="meta">生成于 {{GEN_DATE}} · 预算 {{BUDGET}} · 共 {{GIFT_COUNT}} 个候选</div>
+  </header>
+
+  <section class="summary">
+    <div class="top1">💝 最推荐：{{TOP1_SUMMARY}}</div>
+    <div class="radar-box"><canvas id="radarChart"></canvas></div>
+  </section>
+
+  <!-- 每个候选复制一份 .card；Top1 保留 badge-top，其余删除 -->
+  <!-- BEGIN GIFT_CARD -->
+  <section class="card">
+    <div class="badge-top">最推荐</div>
+    <div class="card-head">
+      <img class="gift-img" src="{{GIFT_IMG}}" alt="{{GIFT_NAME}}" onerror="this.style.opacity=.3">
+      <div class="head-info">
+        <div class="gift-name">{{RANK}}. {{GIFT_NAME}}</div>
+        <div class="price-line"><span class="price">¥{{PRICE_MIN}}</span><span class="conf {{CONF_CLASS}}">{{CONF_TEXT}}置信度</span></div>
+        <div class="score-big">{{TOTAL_SCORE}}<small> /100 综合分 · 画像匹配 {{MATCH_SCORE}}%</small></div>
+        <div class="match-tags">{{MATCH_TAGS}}<!-- <span class="tag">她的本命色</span> --></div>
+      </div>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><span class="label">价格合理性</span><div class="bar"><i style="width:{{S_PRICE}}%"></i></div><span class="val">{{S_PRICE}}</span></div>
+      <div class="bar-row"><span class="label">质量</span><div class="bar"><i style="width:{{S_QUALITY}}%"></i></div><span class="val">{{S_QUALITY}}</span></div>
+      <div class="bar-row"><span class="label">优质好评度</span><div class="bar"><i style="width:{{S_PRAISE}}%"></i></div><span class="val">{{S_PRAISE}}</span></div>
+      <div class="bar-row"><span class="label">低差评率</span><div class="bar"><i style="width:{{S_LOWBAD}}%"></i></div><span class="val">{{S_LOWBAD}}</span></div>
+    </div>
+    <div class="analysis">
+      <div class="section-t">AI 分析 · 推荐理由</div>
+      <ul>{{REASON_LIST}}<!-- <li>...</li> --></ul>
+      <div class="section-t">与她的匹配点</div>
+      <ul>{{MATCH_LIST}}</ul>
+      <div class="risk">⚠️ 注意：{{RISK_NOTES}}</div>
+    </div>
+    <div class="section-t">多渠道比价</div>
+    <table>
+      <thead><tr><th>渠道</th><th>价格</th><th>店铺/来源</th><th>采集时间</th><th>链接</th></tr></thead>
+      <tbody>{{PRICE_ROWS}}<!-- <tr><td>淘宝</td><td>¥xx</td><td>xx旗舰店</td><td>xx</td><td><a href="#" target="_blank">前往购买</a></td></tr> --></tbody>
+    </table>
+  </section>
+  <!-- END GIFT_CARD -->
+
+  <footer>
+    数据来源：{{SOURCES_NOTE}}。价格与库存实时波动，请以商品页实际为准。<br>
+    置信度说明：高=多渠道实时数据；中=单渠道；低=仅聚合信息，下单前请核实。
+  </footer>
+</div>
+<script>
+// {{RADAR_DATA}} 形如 {labels:["价格","质量","好评","低差评"], datasets:[{label:"礼物A",data:[80,90,85,70]},...]}
+const radarData = {{RADAR_DATA}};
+if (window.Chart && radarData) {
+  const palette = ["#e05a6d","#3aa675","#e0a13a","#5a7de0","#9b5ae0","#50b8d0","#d0508e","#7aa63a"];
+  radarData.datasets.forEach((d,i)=>{d.borderColor=palette[i%8];d.backgroundColor=palette[i%8]+"22";d.pointBackgroundColor=palette[i%8];});
+  new Chart(document.getElementById("radarChart"), {
+    type: "radar", data: radarData,
+    options: { responsive:true, scales:{ r:{ min:0, max:100, ticks:{stepSize:20,color:"#8a8a8a"}, grid:{color:"#eee4e6"}, pointLabels:{color:"#2b2b2b",font:{size:13}} } }, plugins:{ legend:{position:"bottom",labels:{color:"#2b2b2b"}} } }
+  });
+}
+</script>
+</body>
+</html>
