@@ -31,6 +31,66 @@
 
 ---
 
+## 在其他 Agent / 运行时中使用本 Skill
+
+本 Skill 采用 **Agent Skills 开放标准**编写（一个含 `SKILL.md` 的目录，frontmatter 含 `name` / `description`），可被遵循该标准的多种 Agent 直接加载，无需重写。下面列出常见运行时的安装方式。
+
+### WorkBuddy（原生运行时）
+见上方「安装 → 方式一」。本 Skill 为 WorkBuddy 设计，所有能力（browser-use 采集、WebSearch、交互式提问、HTML 报告预览）开箱即用。
+
+### Claude Code（Anthropic）
+Claude Code 原生支持 Agent Skills，目录约定：
+- 用户级（所有项目可用）：`~/.claude/skills/gift-picker/`（Windows：`C:\Users\<用户名>\.claude\skills\gift-picker\`）
+- 项目级（仅当前仓库）：`<项目>/.claude/skills/gift-picker/`
+
+```bash
+# 方式 A：从 GitHub 克隆
+git clone https://github.com/Keyway-tech/gift-picker ~/.claude/skills/gift-picker
+# 方式 B：通用 skills CLI
+npx skills add Keyway-tech/gift-picker -a claude
+```
+触发：在 Claude Code 中输入 `/gift-picker`，或描述任务让其按 `description` 自动匹配。
+
+### Codex（OpenAI）
+Codex 同样遵循 Agent Skills 标准，从 `.agents/skills` 发现技能：
+- 用户级：`~/.agents/skills/gift-picker/`（Windows：`C:\Users\<用户名>\.agents\skills\gift-picker\`）
+- 项目级：`<仓库>/.agents/skills/gift-picker/`
+- 机器级：`/etc/codex/skills/`（Linux / macOS）
+
+```bash
+# 方式 A：通用 skills CLI（指定 codex）
+npx skills add Keyway-tech/gift-picker -a codex -g
+# 方式 B：Codex 会话内内置安装器
+$skill-installer https://github.com/Keyway-tech/gift-picker
+# 方式 C：手动克隆
+git clone https://github.com/Keyway-tech/gift-picker ~/.agents/skills/gift-picker
+```
+触发：在 Codex 中输入 `$gift-picker`，或运行 `/skills` 浏览，或描述任务让其隐式匹配。
+
+### 通用 skills CLI（70+ Agent 适用）
+开源 `skills` CLI 支持 Codex、Claude Code、Cursor、OpenCode 等 70+ 编码 Agent，一条命令即可安装：
+```bash
+npx skills add Keyway-tech/gift-picker          # 项目级
+npx skills add Keyway-tech/gift-picker -g       # 全局级
+npx skills add Keyway-tech/gift-picker -a codex # 指定运行时
+```
+常用管理：`npx skills list` / `npx skills update` / `npx skills remove gift-picker`。
+
+### ⚠️ 跨运行时兼容性注意
+本 Skill 的**工作流逻辑（SKILL.md + references）是通用的**，但其中引用了若干 **WorkBuddy 专有能力**，在其他 Agent 中需作等价替换才能完整运行：
+
+| WorkBuddy 专有 | 在他处替换为 |
+|---|---|
+| `browser-use`（读取对方公开主页） | 目标 Agent 的浏览器 / 网页读取工具 |
+| `WebSearch` / 多搜索引擎 | 目标 Agent 的搜索工具 |
+| 交互式提问 `AskUserQuestion` | 目标 Agent 的提问 / 表单能力或直接对话追问 |
+| `present_files` 的 HTML 预览 | "写出 HTML 文件并交回用户" |
+| `scripts/profile_manager.py` 运行方式 | 保持用本地 Python 执行，路径自行调整 |
+
+若您仅需"参考工作流"在某 Agent 中复用，直接把 `SKILL.md` / `references/` 内容粘贴进对应 Agent 的 skill / 指令上下文即可。
+
+---
+
 ## 数据来源与费用（务必阅读）
 
 | 路径 | 费用 | 说明 |
@@ -47,7 +107,7 @@
 gift-picker/
 ├── SKILL.md                      # 主入口：工作流总控、硬性规则、资源索引
 ├── README.md                     # 本文件
-├── LICENSE                       # MIT（商用友好）
+├── LICENSE                       # 非商业许可（不可免费商用）
 ├── .gitignore                    # 排除密钥与运行时数据
 ├── references/
 │   ├── profile-schema.md         # 画像字段 + 获取策略（社媒ID>截图>速写>问答）
@@ -74,4 +134,4 @@ gift-picker/
 
 ## 许可
 
-MIT License —— 允许商用、修改、再分发，须保留版权与许可声明。详见 `LICENSE`。
+**非商业许可（Non-Commercial License）**——允许个人、非商业用途的使用、修改与再分发；**禁止任何商业使用**（含出售、转售、商业集成、商业再分发），商业使用须获得作者书面授权。详见 `LICENSE`。

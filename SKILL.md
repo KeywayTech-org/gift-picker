@@ -64,4 +64,4 @@ agent_created: true
 | `references/scoring-model.md` | 阶段 4 评分前 |
 | `references/html-spec.md` + `assets/report-template.html` | 阶段 5 生成报告前 |
 | `scripts/profile_manager.py` | 画像读写（用托管 Python 绝对路径运行） |
-| `README.md` / `LICENSE` | 对外发售说明与 MIT 许可 |
+| `README.md` / `LICENSE` | 对外发售说明与非商业（Non-Commercial）许可 |
