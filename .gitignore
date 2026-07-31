@@ -1,0 +1,21 @@
+# 密钥（绝不随包提交）
+*.key
+.env
+*.local.json
+
+# 运行时数据
+memory.md
+memory.json
+profiles/
+sessions/
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 画像备份文件
+*.json.bak
+
+# 报告输出
+gift-report-*.html
