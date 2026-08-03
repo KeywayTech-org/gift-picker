@@ -133,8 +133,14 @@ def cmd_set(args):
             patch = json.loads(Path(args.json_file).read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
             sys.exit(f"错误：--json-file 读取失败：{e}")
+    elif args.stdin:
+        # 从标准输入读取 JSON（推荐用于 Codex，避免命令行引号问题）
+        try:
+            patch = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as e:
+            sys.exit(f"错误：stdin 不是合法 JSON：{e}")
     else:
-        sys.exit("错误：需要 --json 或 --json-file")
+        sys.exit("错误：需要 --json 或 --json-file 或 --stdin")
     if not isinstance(patch, dict):
         sys.exit("错误：patch 必须是 JSON 对象")
 

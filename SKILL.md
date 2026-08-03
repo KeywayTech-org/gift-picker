@@ -1,6 +1,6 @@
 ---
 name: gift-picker
-description: 礼物挑选助手。为女朋友/老婆/心仪对象挑选礼物。收到请求后第一个动作必须是检查画像并问用户"你想怎么提供她的信息"（社媒ID/我来描述/发截图/逐题问答），禁止直接问穿搭风格等细节。工作流 5 步：①画像获取 → ②关系阶段 → ③预算 → ④场景品类 → ⑤登录态，每步必做不可跳过。
+description: 礼物挑选助手。为女朋友/老婆/心仪对象挑选礼物。收到请求后第一个动作必须是检查画像并问用户"你想怎么提供她的信息"。工作流 7 步严格有序不可跳过：Step1画像 → Step2关系阶段(必须提问确认，禁止自行推断) → Step3预算 → Step4场景品类 → Step5登录态 → Step6采集评分 → Step7报告。即使用户说了女朋友/老婆，也必须提问确认关系阶段。
 agent_created: true
 ---
 
@@ -13,19 +13,21 @@ agent_created: true
 - 中间数据：本 skill 目录下 `memory.json`（用后即删，支持断点恢复）
 - 报告输出：当前工作区 `gift-report-<日期>.html`
 
-## 核心工作流（5 步，严格按顺序执行）
+## 核心工作流（7 步，严格按顺序执行，每步必须完成后才能进入下一步）
 
 > 🔴 **收到任何礼物挑选请求后，第一个动作必须是：运行 `python scripts/profile_manager.py list` 检查画像，然后用 AskUserQuestion 问用户"你想怎么提供她的信息"。禁止直接问穿搭/风格/兴趣等细节。**
 
-### Step 1：画像 + 关系阶段 + 预算
+> 🔴 **格式要求：每个 Step 必须用一次 AskUserQuestion 工具单独完成，禁止把多个 Step 的提问合并在一条消息中。每完成一个 Step 的 AskUserQuestion 并收到用户回答后，才能进入下一个 Step。**
 
-**1a. 建立/读取画像**
+### Step 1：建立/读取画像
 
 运行 `python scripts/profile_manager.py list` 查看已有画像。
 
 #### 情况 1：无画像
 
 > ⚠️ **硬性规则**：无画像时，第一个问题**必须**是下面这个 AskUserQuestion，**禁止**直接问风格/兴趣/颜色等画像细节。
+
+> 🔴 **必须使用 AskUserQuestion 工具发起此提问。此为独立的一轮对话，收到用户回答前禁止进入 Step 2。**
 
 用 AskUserQuestion 问："还没她的画像，你想怎么提供信息？"
 选项：
@@ -50,11 +52,10 @@ agent_created: true
 `get <昵称>` 读取画像，**必须展示画像摘要**（空字段省略），格式：
 ```
 📋 [昵称] 的画像：
-· 关系：[relationship] · 阶段：[relationship_stage]
-· 风格：[style]，喜欢 [colors_like]
-· 护肤美妆：[brands] · 尺码：[sizes]
-· 兴趣：[hobbies] · 过敏忌口：[allergies]
-· 已有物品：[owned_items]
+· [relationship] · [relationship_stage]
+· 风格：[style] [colors_like] · 品牌：[brands]
+· 尺码：[sizes] · 爱好：[hobbies]
+· 过敏：[allergies] · 已有：[owned_items]
 ```
 
 然后用 AskUserQuestion 问："画像信息有变化吗？"
@@ -64,11 +65,17 @@ agent_created: true
 
 直接进入增量更新，不重走全量引导。
 
+**Step 1 完成标志**：画像已读取/创建并确认，有 `set` 保存或确认无变化。
+
 ---
 
-**1b. 关系阶段（画像确认后立即问，不可跳过）**
+### Step 2：关系阶段（Step 1 完成后立即执行，不可跳过）
 
-用 AskUserQuestion 问："你们目前处于哪个阶段？"
+> 🔴 **此步必须在 Step 1 之后、Step 3 之前执行。禁止跳过此步。即使用户说了"女朋友/老婆/心仪对象"，也必须用 AskUserQuestion 提问确认具体阶段，禁止自行推断。**
+
+> 🔴 **必须使用 AskUserQuestion 工具发起此提问。此为独立的一轮对话，收到用户回答前禁止进入 Step 3。禁止与 Step 1 的提问合并在同一条消息中。**
+
+即使用户在一开始说"给女朋友挑礼物"，也**不能跳过此步**，必须用 AskUserQuestion 问："你们目前处于哪个阶段？"
 选项：
 - 追求期（还在追求/暧昧，没正式在一起）
 - 热恋期（刚确认关系 0-6 个月）
@@ -76,11 +83,20 @@ agent_created: true
 - 新婚期（刚结婚 0-2 年）
 （周年纪念 / 长期陪伴 → Other 输入）
 
+**示例对话**：
+用户："给女朋友挑七夕礼物"
+你：Step 1 完成后，必须问 → "你们目前处于哪个阶段？"
+→ 不能因为用户说了"女朋友"就推断是热恋期，必须提问确认
+
 确认后 `set` 写入 `relationship_stage` 字段。
+
+**Step 2 完成标志**：`relationship_stage` 字段已通过 `set` 写入画像。
 
 ---
 
-**1c. 预算（关系阶段后立即问，不可跳过）**
+### Step 3：预算（Step 2 完成后立即执行，不可跳过）
+
+> 🔴 **此步必须在 Step 2 之后、Step 4 之前执行。禁止跳过此步。**
 
 读取 `references/budget-advisor.md` 计算建议预算（阶段基准×关系深度×场景×历史修正），先展示：
 ```
@@ -92,7 +108,9 @@ agent_created: true
 
 确认后写入 `memory.json`。
 
-### Step 2：场景 + 品类 + 评分偏好
+**Step 3 完成标志**：预算已写入 `memory.json`。
+
+### Step 4：场景 + 品类 + 评分偏好
 
 用 AskUserQuestion 依次问 3 题：
 
@@ -110,37 +128,50 @@ agent_created: true
 
 即使用户选了"没想法帮我推荐"，采集时也优先多采集首饰和美妆香氛类商品，其他品类作为补充。报告排序时首饰和美妆香氛排在前面。
 
-### Step 3：登录态自动检测与登录
+**Step 4 完成标志**：场景、品类偏好、评分偏好已确定。
 
-**不再询问用户选哪个渠道，直接自动检测淘宝和京东两个渠道：**
+### Step 5：登录态自动检测与登录
 
-1. 先检测淘宝登录态：
+**不再询问用户选哪个渠道，直接自动检测淘宝和京东两个渠道。读取脚本输出中的状态标记来判断结果。**
+
+#### 状态标记说明：
+- `CHECK_AND_LOGIN_STATUS:OK` → 登录态有效，跳过该渠道
+- `CHECK_AND_LOGIN_STATUS:NEED_LOGIN` → 需要登录，浏览器将自动打开
+- `LOGIN_STATUS:OK` → 登录成功
+- `LOGIN_STATUS:TIMEOUT` → 登录超时，需重新执行
+- `LOGIN_STATUS:ERROR` → 登录出错
+
+#### 执行流程：
+
+1. **检测淘宝登录态**：
    ```
    python scripts/login_manager.py check_and_login taobao
    ```
-   - 有效 → ✅ 跳过，继续检测京东
-   - 无效/不存在 → 🌐 自动打开浏览器跳转淘宝登录页，告诉用户：
+   
+   读取输出中的状态标记：
+   - 如果 `CHECK_AND_LOGIN_STATUS:OK` → ✅ 淘宝登录态有效，继续检测京东
+   - 如果 `CHECK_AND_LOGIN_STATUS:NEED_LOGIN` → 🌐 浏览器已自动打开，告诉用户：
      ```
      🌐 已为你打开淘宝登录页，请在浏览器中完成登录（扫码或账号密码）
      ⏰ 登录成功后状态将自动保存，下次使用无需重新登录
      ```
-     等待登录完成
+     然后等待脚本执行完成（脚本会阻塞等待用户登录，最长5分钟）
+     - 如果后续输出 `LOGIN_STATUS:OK` → ✅ 登录成功，继续检测京东
+     - 如果输出 `LOGIN_STATUS:TIMEOUT` → ⚠️ 登录超时，告知用户并让用户重新执行
+     - 如果输出 `LOGIN_STATUS:ERROR` → ❌ 登录出错，告知用户
 
-2. 再检测京东登录态：
+2. **检测京东登录态**：
    ```
    python scripts/login_manager.py check_and_login jd
    ```
-   - 有效 → ✅ 跳过
-   - 无效/不存在 → 🌐 自动打开浏览器跳转京东登录页，告诉用户：
-     ```
-     🌐 已为你打开京东登录页，请在浏览器中完成登录
-     ⏰ 登录成功后状态将自动保存
-     ```
-     等待登录完成
+   
+   同样读取状态标记并按上述逻辑处理。
 
-3. 两个渠道都完成后，进入采集阶段，报告中的商品链接可直接跳转购买页
+3. **两个渠道都完成后**，进入采集阶段，报告中的商品链接可直接跳转购买页
 
-### Step 4：采集 + 评分
+**Step 5 完成标志**：淘宝和京东登录态均已检测完毕（无论是有效还是登录成功）。
+
+### Step 6：采集 + 评分
 
 按 `references/data-sources.md` 采集 5-8 个候选（登录态渠道保存原始商品 URL）。
 
@@ -154,13 +185,15 @@ agent_created: true
 5. 场景适配理由
 6. 价格合理性（引用 budget-advisor.md）
 
-### Step 5：报告生成
+**Step 6 完成标志**：5-8 个候选商品已采集并完成五维评分。
+
+### Step 7：报告生成
 
 读取 `assets/report-template.html`，按 `references/html-spec.md` 填充（HTML 转义），输出到工作区，用 present_files 交付。删除 `memory.json`。
 
 ## 硬性规则
 
-1. **5 步工作流严格有序**：Step 1a→1b→1c→Step 2→Step 3→Step 4→Step 5，每步必做
+1. **7 步工作流严格有序**：Step 1→Step 2→Step 3→Step 4→Step 5→Step 6→Step 7，每步必做，不可跳过任何一步
 2. **登录态前置**：采集前必须通过 `login_manager.py check` 校验，失效则 `login` 让用户手动登录
 3. **登录态失效熔断**：采集中发现失效立刻停止该渠道，重新校验后从 `memory.json` 断点继续
 4. **XSS 防护**：所有写入模板的数据必须 HTML 转义
@@ -172,13 +205,13 @@ agent_created: true
 | 文件 | 何时读取 |
 |---|---|
 | `references/profile-schema.md` | 建立/更新画像时的字段定义 |
-| `references/relationship-stages.md` | Step 1b 确认阶段 / Step 2 过滤品类 / Step 4 评分 |
-| `references/flower-guide.md` | Step 4 生成花语建议 |
+| `references/relationship-stages.md` | Step 2 确认阶段 / Step 4 过滤品类 / Step 6 评分 |
+| `references/flower-guide.md` | Step 6 生成花语建议 |
 | `references/social-profiling.md` | 社媒 ID 一键画像详细流程 |
-| `references/data-sources.md` | Step 3 采集 |
-| `references/scoring-model.md` | Step 4 评分 |
-| `references/budget-advisor.md` | Step 1c 预算建议 |
-| `references/seasonal-guide.md` | Step 4 季节理由 |
-| `references/html-spec.md` + `assets/report-template.html` | Step 5 报告生成 |
+| `references/data-sources.md` | Step 6 采集 |
+| `references/scoring-model.md` | Step 6 评分 |
+| `references/budget-advisor.md` | Step 3 预算建议 |
+| `references/seasonal-guide.md` | Step 6 季节理由 |
+| `references/html-spec.md` + `assets/report-template.html` | Step 7 报告生成 |
 | `scripts/profile_manager.py` | 画像读写 |
 | `scripts/login_manager.py` | 登录态管理 |
