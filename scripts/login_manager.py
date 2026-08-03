@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""登录态管理：login / check / list / clear
+"""登录态管理：login / check / check_and_login / list / clear
 
 基于 Playwright 的持久化登录态管理。
 存储位置：~/.workbuddy/gift-picker/sessions/<channel>.json
@@ -9,6 +9,7 @@
   python login_manager.py list                           # 查看所有已保存的登录态
   python login_manager.py login taobao                   # 启动浏览器登录淘宝
   python login_manager.py check taobao                    # 检查淘宝登录态是否有效
+  python login_manager.py check_and_login taobao          # 检查并自动跳转登录（推荐）
   python login_manager.py clear taobao                    # 清除淘宝登录态
   python login_manager.py login taobao --timeout 300       # 自定义登录等待超时（秒）
   python login_manager.py check taobao --url https://...   # 自定义校验页面
@@ -305,6 +306,63 @@ def cmd_check(args):
             browser.close()
 
 
+def cmd_check_and_login(args):
+    """检查登录态，失效则自动打开浏览器跳转到登录页。"""
+    channel = args.channel
+    if channel not in CHANNEL_CONFIG:
+        sys.exit(f"错误：未知渠道 '{channel}'。支持的渠道：{', '.join(CHANNEL_CONFIG.keys())}")
+
+    config = CHANNEL_CONFIG[channel]
+    timeout = args.timeout or DEFAULT_TIMEOUT
+    state_path = _session_path(channel)
+
+    state = _load_storage_state(channel)
+    profile_dir = SESSION_DIR / f"{channel}_profile"
+
+    if state is None and not profile_dir.exists():
+        print(f"❌ 未找到 {config['name']} 登录态，即将打开浏览器跳转到登录页...")
+        cmd_login(args)
+        return
+
+    print(f"📋 检查 {config['name']} 登录态...")
+    with sync_playwright() as p:
+        page = None
+        context = None
+
+        if profile_dir.exists():
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                headless=True,
+            )
+            page = context.pages[0] if context.pages else context.new_page()
+        else:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=str(state_path) if state.get("cookies") else None)
+            page = context.new_page()
+
+        try:
+            page.goto(config["check_url"], wait_until="domcontentloaded", timeout=CHECK_TIMEOUT)
+        except PlaywrightTimeout:
+            pass
+
+        status = _check_login_status(page, channel)
+
+        if status["status"] == "ok":
+            print(f"✅ {config['name']} 登录态有效，可直接使用！")
+            if context:
+                context.close()
+            return
+
+        print(f"⚠️  {config['name']} 登录态已失效或无法判断（{status['reason']}）")
+        print(f"🌐 即将打开 {config['name']} 登录页，请在浏览器中完成登录...")
+
+        if context:
+            context.close()
+
+    # 自动跳转登录
+    cmd_login(args)
+
+
 def cmd_list(_args):
     """列出所有已保存的登录态。"""
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
@@ -391,6 +449,9 @@ def main():
   jd            京东
   xiaohongshu   小红书
 
+推荐用法：
+  check_and_login <channel>   自动检查+跳转登录（最便捷）
+
 环境变量：
   GIFT_PICKER_HOME              存储根目录（默认 ~/.workbuddy/gift-picker）
   GIFT_PICKER_SESSION_HOME      登录态存储目录（默认 $GIFT_PICKER_HOME/sessions）
@@ -415,6 +476,13 @@ def main():
     p_check.add_argument("--url", type=str, default=None,
                          help="自定义校验页面URL")
 
+    # check_and_login
+    p_cal = sub.add_parser("check_and_login", help="检查登录态，失效则自动打开浏览器跳转到登录页")
+    p_cal.add_argument("channel", choices=list(CHANNEL_CONFIG.keys()),
+                       help="要检查的渠道")
+    p_cal.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
+                       help=f"登录等待超时秒数（默认 {DEFAULT_TIMEOUT}）")
+
     # clear
     p_clear = sub.add_parser("clear", help="清除已保存的登录态")
     p_clear.add_argument("channel", choices=list(CHANNEL_CONFIG.keys()),
@@ -431,6 +499,7 @@ def main():
         "list": cmd_list,
         "login": cmd_login,
         "check": cmd_check,
+        "check_and_login": cmd_check_and_login,
         "clear": cmd_clear,
     }
 
