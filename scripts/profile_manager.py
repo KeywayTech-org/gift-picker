@@ -17,8 +17,14 @@ import os
 import sys
 import tempfile
 import html
+import io
 from datetime import date
 from pathlib import Path
+
+# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8
+if sys.platform == "win32":
+    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 PROFILE_DIR = Path(os.environ.get("GIFT_PICKER_HOME", str(Path.home() / ".workbuddy" / "gift-picker" / "profiles")))
 SCHEMA_VERSION = 1
@@ -215,6 +221,7 @@ def cmd_set(args):
     if auto_nickname:
         nickname = _auto_nickname(patch)
         print(f"🤖 自动生成昵称：{nickname}")
+        print(f"NICKNAME_SUGGESTED:{nickname}")
     else:
         nickname = args.nickname
 
