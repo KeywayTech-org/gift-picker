@@ -88,6 +88,15 @@
   footer{color:var(--muted);font-size:12px;text-align:center;padding:24px 12px;border-top:1px solid var(--line);margin-top:28px}
   @media (max-width:600px){.gift-img{width:100%;height:200px}}
   .gift-img.error{background:repeating-linear-gradient(45deg,#f3ecee,#f3ecee 10px,#ead8dc 10px,#ead8dc 20px);border:2px dashed #d8b8c0}
+  /* 优质评论样式 */
+  .reviews-section{margin:14px 0}
+  .review-card{background:#fdf8f9;border:1px solid #f0e4e7;border-radius:10px;padding:10px 14px;margin:8px 0;font-size:13px}
+  .review-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  .review-user{font-weight:600;color:var(--ink);font-size:13px}
+  .review-rating{color:var(--warn);font-size:12px}
+  .review-content{color:#5a4a52;line-height:1.5;font-size:13px}
+  .review-tag{display:inline-block;font-size:11px;background:#f0f7ff;color:#3a7cc8;padding:1px 8px;border-radius:99px;margin-right:4px}
+  .review-empty{color:var(--muted);font-size:13px;font-style:italic}
 </style>
 </head>
 <body>
@@ -108,7 +117,13 @@
     {{CATEGORY_COMPARE}}
   </section>
 
-  <!-- 注意：所有 {{PLACEHOLDER}} 必须经过 HTML 转义 -->
+  <!-- 占位符转义分类（详见 references/html-spec.md）：
+       A 类纯文本值：必须 html.escape() 后写入（如 GIFT_NAME, TOP1_SUMMARY, STAGE_REASON 等）
+       B 类 HTML 片段：禁止整体转义！（BUDGET_BOX / SEASON_BOX / CATEGORY_COMPARE / MATCH_TAGS /
+         REASON_LIST / MATCH_LIST / PRICE_ROWS / FLOWER_BLOCK / REVIEWS_BLOCK）
+         必须在构造 HTML 字符串时对内部文本逐段转义，再把安全的 HTML 原样写入占位符。
+         如果整体转义，会把 <div> 等标签渲染成纯文本（用户截图 Bug）。
+       C 类系统生成：直接写入即可（评分数字、枚举 class、日期、计数等） -->
   <!-- BEGIN GIFT_CARD -->
   <section class="card">
     <div class="badge-top">最推荐</div>
@@ -147,6 +162,9 @@
 
       <div class="section-t">👤 与她的匹配点</div>
       <ul>{{MATCH_LIST}}</ul>
+
+      <div class="section-t reviews-section">💬 优质评论</div>
+      {{REVIEWS_BLOCK}}
 
       <div class="risk">⚠️ 注意：{{RISK_NOTES}}</div>
     </div>

@@ -8,39 +8,72 @@
 
 ## 安全：HTML 转义（硬性要求）
 
-所有写入模板占位符的数据**必须**经过 HTML 转义，防止 XSS 注入：
+> 🔴 **转义分层规则**：字段分为两类——「纯文本值」必须逐个转义后再拼接；「完整 HTML 片段」禁止整体转义，否则会像截图那样把 `<div>` 显示为纯文本。HTML 片段内部嵌入的每个文本值仍必须单独转义。
 
 ```python
 import html
-safe_value = html.escape(original_value)
+# 纯文本值：写入 HTML 上下文前必须转义
+safe_text = html.escape(original_text)
 ```
 
-**必须转义的字段**：
-- `{{GIFT_NAME}}` - 商品名称
-- `{{PRICE_MIN}}` - 价格（数字但仍需转义以防异常值）
-- `{{RANK}}` - 排名
-- `{{CONF_TEXT}}` - 置信度文本
-- `{{MATCH_TAGS}}` - 匹配标签
-- `{{REASON_LIST}}` - 推荐理由列表项
-- `{{MATCH_LIST}}` - 匹配点列表项
-- `{{RISK_NOTES}}` - 风险提示
-- `{{PRICE_ROWS}}` - 比价表行（渠道名、店铺名、采集时间）
-- `{{TOP1_SUMMARY}}` - Top1 摘要
-- `{{SOURCES_NOTE}}` - 数据来源说明
-- `{{STAGE_NAME}}` - 关系阶段名称
-- `{{STAGE_REASON}}` - 阶段适配理由
-- `{{FLOWER_BLOCK}}` - 花语/朵数区块（完整 HTML 片段，需整体转义）
-- `{{SEASON_NAME}}` - 当前季节名称
-- `{{SEASON_REASON}}` - 季节适配理由
-- `{{BUDGET_REASON}}` - 预算合理性分析
-- `{{BUDGET_BOX}}` - 预算建议区块（摘要区，完整 HTML 片段）
-- `{{SEASON_BOX}}` - 季节适配区块（摘要区，完整 HTML 片段）
-- `{{CATEGORY_COMPARE}}` - 多品类对比区块（摘要区，完整 HTML 片段）
+---
 
-**可跳过转义的字段**（模板级控制，非用户输入）：
-- `{{RADAR_DATA}}` - JSON 数据（直接嵌入 `<script>`，必须确保是合法 JSON）
-- `{{S_PRICE}}`, `{{S_QUALITY}}`, `{{S_PRAISE}}`, `{{S_LOWBAD}}`, `{{S_STAGE}}` - 评分数字
-- `{{PAGE_TITLE}}`, `{{GEN_DATE}}`, `{{BUDGET}}`, `{{GIFT_COUNT}}` - 页面元信息
+### A 类：纯文本值字段（**必须逐个转义**后再写入占位符）
+
+这些是单个字符串值，会被嵌入到 HTML 标签的 textContent 或属性中：
+
+- `{{GIFT_NAME}}` - 商品名称（textContent）
+- `{{PRICE_MIN}}` - 价格（数字也转义，防止异常值注入属性）
+- `{{RANK}}` - 排名
+- `{{CONF_TEXT}}` - 置信度文字（高/中/低）
+- `{{TOP1_SUMMARY}}` - Top1 一句话结论
+- `{{SOURCES_NOTE}}` - 数据来源说明
+- `{{STAGE_NAME}}` - 关系阶段名称（如"热恋期"）
+- `{{STAGE_REASON}}` - 阶段适配理由段落（纯文本部分）
+- `{{SEASON_NAME}}` - 当前季节名称
+- `{{SEASON_REASON}}` - 季节适配理由段落（纯文本部分）
+- `{{BUDGET_REASON}}` - 预算合理性分析段落（纯文本部分）
+- `{{RISK_NOTES}}` - 风险提示（纯文本）
+- `{{MATCH_SCORE}}` - 画像匹配百分比数字
+- `{{TOTAL_SCORE}}` - 综合分数（同样转义，防异常值）
+- `{{GIFT_IMG}}` - 图片 URL（作为 `<img src>` 属性时用属性转义规则；若 URL 非可信域需额外校验前缀）
+
+---
+
+### B 类：完整 HTML 片段字段（**禁止整体转义**，由系统拼接时对内部值转义）
+
+这些占位符接收的是系统预先生成的**完整 HTML 结构**（包含 `<div>`、`<ul>`、`<li>`、`<table>`、`<span>` 等标签）。如果对它们整体执行 `html.escape()`，会导致 `<`、`>`、`"` 变成实体字符并显示为纯文本（即用户截图中的 Bug）。
+
+**构造这些区块时，必须对区块内部的每一段用户/采集来源文本单独执行转义，然后把安全的 HTML 字符串原样放进占位符。**
+
+| 占位符 | 内容结构说明 | 构造时需单独转义的内部文本点 |
+|---|---|---|
+| `{{MATCH_TAGS}}` | 多个 `<span class="tag">…</span>` 拼接 | 每个 tag 内的文字（浪漫、简约等） |
+| `{{REASON_LIST}}` | 多个 `<li>…</li>` 拼接 | 每条 `<li>` 内的理由文本 |
+| `{{MATCH_LIST}}` | 多个 `<li>…</li>` 拼接 | 每条 `<li>` 内的匹配点文本 |
+| `{{PRICE_ROWS}}` | 多个 `<tr><td>…</td>…</tr>` 拼接 | 渠道名、店铺名、价格字符串、采集时间、`<a>` 中的 href 属性（URL 需做白名单校验） |
+| `{{FLOWER_BLOCK}}` | 完整 `<div class="flower-box">…</div>` 或空字符串 | 花品种、颜色、花语、朵数、含义、场合、注意事项 |
+| `{{BUDGET_BOX}}` | 完整 `<div class="budget-box">…</div>` 区块 | 预算数字、建议区间文本、策略描述文字、区间徽标文字、档位文字 |
+| `{{SEASON_BOX}}` | 完整 `<div class="season-box">…</div>` 区块 | 场合值、推荐组合文本、理由段落 |
+| `{{CATEGORY_COMPARE}}` | 完整 `<div class="category-compare">…</div>`，内含 3–5 张 `.cat-card` | 品类名、价格区间、评级文字、描述段落 |
+| `{{REVIEWS_BLOCK}}` | 多个 `<div class="review-card">…</div>` 拼接或 review-empty | 评论者昵称、评分显示、评论摘要、标签文字 |
+
+---
+
+### C 类：可跳过转义的字段（系统生成，非用户输入）
+
+- `{{RADAR_DATA}}` - JSON 数据（直接嵌入 `<script>`，必须确保是合法 JSON，禁止拼接用户输入字符串）
+- `{{S_PRICE}}`, `{{S_QUALITY}}`, `{{S_PRAISE}}`, `{{S_LOWBAD}}`, `{{S_STAGE}}` - 0–100 的评分数字（系统计算值）
+- `{{PAGE_TITLE}}`, `{{GEN_DATE}}`, `{{BUDGET}}`, `{{GIFT_COUNT}}` - 页面元信息（系统生成字符串）
+- `{{CONF_CLASS}}` - CSS class 名（`high`/`mid`/`low`，枚举值，非用户输入）
+
+---
+
+### 属性上下文的额外规则
+
+当纯文本被写入 **HTML 属性**（如 `<img alt="{{GIFT_NAME}}"`、`<a href="…">`）时：
+- `alt` / `title` / `class` / 普通属性：`html.escape(value, quote=True)`（默认行为即可）
+- `href` / `src` 等 URL 属性：额外校验协议白名单（仅允许 `http://`、`https://`、`data:image/`），禁止 `javascript:`、`vbscript:` 等协议；不满足时替换为 `about:blank` 或占位图 data-URI。
 
 ## 页面结构（自上而下）
 

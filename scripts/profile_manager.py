@@ -31,6 +31,72 @@ EXTEND_LIST_FIELDS = {"colors_like", "colors_dislike", "allergies", "diet_taboo"
 
 MAX_NICKNAME_LENGTH = 50
 
+# 关系阶段中文映射
+STAGE_CN = {
+    "pursuit": "追求",
+    "honeymoon": "热恋",
+    "stable": "稳定",
+    "newlywed": "新婚",
+    "anniversary": "周年",
+    "long_term": "陪伴",
+}
+
+
+def _auto_nickname(patch: dict) -> str:
+    """根据画像关键词自动生成昵称。
+    格式：[关系阶段] + [风格/爱好/颜色关键词]
+    组合优先级：style > hobbies > colors_like
+    """
+    parts = []
+
+    # 1. 关系阶段前缀
+    stage = patch.get("relationship_stage", "")
+    if stage and stage in STAGE_CN:
+        parts.append(STAGE_CN[stage])
+
+    # 2. 核心关键词（优先 style）
+    style = patch.get("style", "")
+    if style and isinstance(style, str) and style.strip():
+        # 取第一个风格词
+        word = style.strip().split()[0] if style.strip() else ""
+        if word:
+            parts.append(word)
+
+    # 3. 如果还没有关键词，用爱好或颜色补充
+    if len(parts) <= 1:
+        hobbies = patch.get("hobbies", [])
+        if hobbies and isinstance(hobbies, list) and len(hobbies) > 0:
+            hobby = hobbies[0] if isinstance(hobbies[0], str) else str(hobbies[0])
+            parts.append(hobby[:4])
+
+    if len(parts) <= 1:
+        colors = patch.get("colors_like", [])
+        if colors and isinstance(colors, list) and len(colors) > 0:
+            color = colors[0] if isinstance(colors[0], str) else str(colors[0])
+            parts.append(color)
+
+    # 4. 兜底
+    if len(parts) <= (1 if stage and stage in STAGE_CN else 0):
+        import random
+        adjectives = ["小可爱", "小仙女", "宝贝", "甜心"]
+        suffix = patch.get("nickname", "") or patch.get("name", "") or "她"
+        parts.append(random.choice(adjectives))
+        if suffix and isinstance(suffix, str):
+            parts.append(suffix[:4])
+
+    nickname = "".join(p for p in parts if p)
+    # 确保长度和合法性
+    nickname = _sanitize_nickname(nickname)
+    if not nickname:
+        nickname = "新画像"
+    return nickname
+
+
+def _sanitize_nickname(nickname: str) -> str:
+    """清理昵称中的非法字符。"""
+    safe = "".join(c for c in nickname if c not in '\\/:*?"<>|').strip()
+    return safe[:MAX_NICKNAME_LENGTH]
+
 
 def _path(nickname: str) -> Path:
     safe = "".join(c for c in nickname if c not in '\\/:*?"<>|').strip()
@@ -144,8 +210,16 @@ def cmd_set(args):
     if not isinstance(patch, dict):
         sys.exit("错误：patch 必须是 JSON 对象")
 
+    # 自动生成昵称（当 --auto-name 或昵称为空时）
+    auto_nickname = args.auto_name if hasattr(args, 'auto_name') and args.auto_name else (not args.nickname or args.nickname == "auto")
+    if auto_nickname:
+        nickname = _auto_nickname(patch)
+        print(f"🤖 自动生成昵称：{nickname}")
+    else:
+        nickname = args.nickname
+
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    p = _path(args.nickname)
+    p = _path(nickname)
 
     # 写入前备份
     backup = p.with_suffix(".json.bak") if p.exists() else None
@@ -155,11 +229,14 @@ def cmd_set(args):
         except OSError as e:
             sys.exit(f"错误：备份失败：{e}")
 
+    # 记录临时 JSON 文件路径（用于成功后清理）
+    json_file_path = args.json_file if hasattr(args, 'json_file') and args.json_file else None
+
     try:
         data = _load(p)
         created = not p.exists()
         data = _deep_merge(data, patch)
-        data["nickname"] = args.nickname
+        data["nickname"] = nickname
         data["schema_version"] = SCHEMA_VERSION
         data["updated_at"] = date.today().isoformat()
         _atomic_write(p, data)
@@ -179,7 +256,28 @@ def cmd_set(args):
         except OSError:
             pass
 
-    print(f"{'已创建' if created else '已更新'}画像：{p}")
+    # 新建画像时清理会话记忆，确保不掺杂之前信息
+    if created:
+        skill_dir = Path(__file__).parent.parent
+        memory_file = skill_dir / "memory.json"
+        if memory_file.exists():
+            try:
+                memory_file.unlink()
+                print(f"🧹 已清理之前的会话记忆，确保新画像信息全新")
+            except OSError:
+                pass
+
+    # 成功后清理临时 JSON 文件
+    if json_file_path:
+        tmp = Path(json_file_path)
+        if tmp.exists():
+            try:
+                tmp.unlink()
+                print(f"🧹 已清理临时数据文件")
+            except OSError:
+                pass
+
+    print(f"{'已创建' if created else '已更新'}画像：{nickname}")
 
 
 def cmd_delete(args):
@@ -219,8 +317,11 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("list")
     g = sub.add_parser("get"); g.add_argument("nickname")
-    s = sub.add_parser("set"); s.add_argument("nickname")
+    s = sub.add_parser("set")
+    s.add_argument("nickname", nargs="?", default="auto", help="画像昵称（auto=自动生成）")
     s.add_argument("--json"); s.add_argument("--json-file")
+    s.add_argument("--auto-name", action="store_true", help="自动根据关键词生成昵称")
+    s.add_argument("--stdin", action="store_true", help="从标准输入读取 JSON")
     d = sub.add_parser("delete"); d.add_argument("nickname"); d.add_argument("--confirm", action="store_true")
     sub.add_parser("migrate", help="迁移旧版画像到当前 schema")
     args = ap.parse_args()
