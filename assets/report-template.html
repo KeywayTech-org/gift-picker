@@ -87,7 +87,30 @@
   td a{color:var(--accent);text-decoration:none}
   footer{color:var(--muted);font-size:12px;text-align:center;padding:24px 12px;border-top:1px solid var(--line);margin-top:28px}
   @media (max-width:600px){.gift-img{width:100%;height:200px}}
+  /* 备选方案折叠样式 */
+  .alt-gifts summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);padding:8px 0}
+  .alt-gifts[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+  .alt-gifts .card{opacity:0.85}
+  /* Top1 强化 */
+  .card.top-pick{border:2px solid var(--accent);box-shadow:0 4px 16px rgba(224,90,109,0.12)}
+  .card.top-pick .gift-img{width:180px;height:180px}
+  .card.top-pick .gift-name{font-size:22px}
+  .card.top-pick .price{font-size:32px}
   .gift-img.error{background:repeating-linear-gradient(45deg,#f3ecee,#f3ecee 10px,#ead8dc 10px,#ead8dc 20px);border:2px dashed #d8b8c0}
+  /* 快速决策摘要框 */
+  .quick-decide{background:linear-gradient(135deg,#fdf0f2 0%,#f8e4ea 100%);border:2px solid var(--accent);border-radius:16px;padding:20px;margin:16px 0;display:flex;gap:20px;align-items:center}
+  .qd-top1{flex:1;min-width:0}
+  .qd-label{font-size:14px;color:var(--accent);font-weight:600;margin-bottom:6px}
+  .qd-name{font-size:22px;font-weight:700;color:var(--ink);margin-bottom:4px}
+  .qd-price{font-size:28px;color:var(--accent);font-weight:800;margin-bottom:6px}
+  .qd-reason{font-size:14px;color:#5a4a52;margin-bottom:10px;line-height:1.4}
+  .qd-link{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:13px;padding:8px 20px;border-radius:99px;font-weight:600}
+  .qd-link:hover{background:#c94a5c}
+  .qd-stats{display:flex;flex-direction:column;gap:12px;text-align:center;flex-shrink:0}
+  .qd-stat{display:flex;flex-direction:column;align-items:center;background:#fff;border-radius:12px;padding:10px 16px;min-width:90px}
+  .qd-stat-val{font-size:24px;font-weight:800;color:var(--accent)}
+  .qd-stat-label{font-size:12px;color:var(--muted);margin-top:2px}
+  @media (max-width:600px){.quick-decide{flex-direction:column;gap:16px}.qd-stats{flex-direction:row;flex-wrap:wrap;justify-content:center}}
   /* 优质评论样式 */
   .reviews-section{margin:14px 0}
   .review-card{background:#fdf8f9;border:1px solid #f0e4e7;border-radius:10px;padding:10px 14px;margin:8px 0;font-size:13px}
@@ -105,6 +128,22 @@
     <h1>{{PAGE_TITLE}}<span class="stage-badge">{{STAGE_NAME}}</span></h1>
     <div class="meta">生成于 {{GEN_DATE}} · 预算 {{BUDGET}} · 关系阶段 {{STAGE_NAME}} · 共 {{GIFT_COUNT}} 个候选</div>
   </header>
+
+  <!-- 快速决策摘要框：用户 10 秒内可完成决策 -->
+  <section class="quick-decide">
+    <div class="qd-top1">
+      <div class="qd-label">💝 最推荐</div>
+      <div class="qd-name">{{TOP1_NAME}}</div>
+      <div class="qd-price">¥{{TOP1_PRICE}}</div>
+      <div class="qd-reason">{{TOP1_REASON}}</div>
+      <a class="qd-link" href="{{TOP1_LINK}}" target="_blank">🛒 查看商品</a>
+    </div>
+    <div class="qd-stats">
+      <div class="qd-stat"><span class="qd-stat-val">{{TOP1_SCORE}}</span><span class="qd-stat-label">综合分</span></div>
+      <div class="qd-stat"><span class="qd-stat-val">{{TOP1_MATCH}}%</span><span class="qd-stat-label">匹配度</span></div>
+      <div class="qd-stat"><span class="qd-stat-val">{{TOP1_CONF}}</span><span class="qd-stat-label">置信度</span></div>
+    </div>
+  </section>
 
   <section class="summary">
     <div class="top1">💝 最推荐：{{TOP1_SUMMARY}}</div>
@@ -125,7 +164,7 @@
          如果整体转义，会把 <div> 等标签渲染成纯文本（用户截图 Bug）。
        C 类系统生成：直接写入即可（评分数字、枚举 class、日期、计数等） -->
   <!-- BEGIN GIFT_CARD -->
-  <section class="card">
+  <section class="card top-pick">
     <div class="badge-top">最推荐</div>
     <div class="stage-badge-card">{{STAGE_NAME}}</div>
     <div class="card-head">
@@ -175,6 +214,12 @@
     </table>
   </section>
   <!-- END GIFT_CARD -->
+
+  <!-- 备选方案（Top2 及之后，默认折叠） -->
+  <details class="alt-gifts">
+  <summary>📋 查看其他备选方案（{{GIFT_COUNT}} 个候选）</summary>
+  <!-- 此处填充 Top2 及之后的卡片，结构与 Top1 相同但 class="card" 不含 top-pick -->
+  </details>
 
   <footer>
     数据来源：{{SOURCES_NOTE}}。价格与库存实时波动，请以商品页实际为准。<br>
