@@ -109,16 +109,22 @@ gift-picker/
 ├── README.md                     # 本文件
 ├── LICENSE                       # 非商业许可（不可免费商用）
 ├── .gitignore                    # 排除密钥与运行时数据
+├── TODO.md                       # 修复计划（40 条问题分阶段）
 ├── references/
-│   ├── profile-schema.md         # 画像字段 + 获取策略（社媒ID>截图>速写>问答）
+│   ├── profile-schema.md         # 画像字段 + 获取策略 + 完整度算法
 │   ├── social-profiling.md       # 社媒 ID 一键画像流程与 7 维分析
 │   ├── data-sources.md           # 信息源策略 + 登录态协议 + 降级路径
-│   ├── scoring-model.md          # 四维评分 + 画像匹配 + 置信度
-│   └── html-spec.md              # 报告结构规范
+│   ├── scoring-model.md          # 五维评分 + 画像匹配 + 置信度
+│   ├── budget-advisor.md         # 预算智能建议系统
+│   ├── relationship-stages.md    # 六大关系阶段策略 + 明示触发词表
+│   ├── seasonal-guide.md         # 季节适配建议
+│   ├── flower-guide.md           # 花语与朵数建议
+│   └── memory-schema.md          # 中间数据 memory.json 结构与写入时机
 ├── assets/
 │   └── report-template.html      # 礼物清单模板（卡片+Chart.js+比价表）
 └── scripts/
-    └── profile_manager.py        # 画像读写/合并/校验
+    ├── profile_manager.py        # 画像读写/合并/校验/完整度/迁移
+    └── login_manager.py          # 登录态管理（基于 Playwright）
 ```
 
 ---

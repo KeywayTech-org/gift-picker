@@ -76,7 +76,7 @@ python scripts/login_manager.py clear taobao --confirm
 
 每个渠道在 `login_manager.py` 的 `CHANNEL_CONFIG` 中定义了两组信号：
 
-**正向信号（任一满足即视为登录成功）**：
+**正向信号（需 ≥2 个匹配才视为登录成功，避免误判）**：
 - URL 不包含登录域（如 `login.taobao.com`）
 - 页面存在用户昵称/头像元素
 - 页面包含"你好"等问候文本

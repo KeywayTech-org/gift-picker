@@ -73,7 +73,7 @@ agent_created: true
 > 🔴 **每次开启新会话，必须先展示所有已有画像名称，让用户选择操作方式。**
 
 1. 运行 `python scripts/profile_manager.py list` 获取所有已有画像
-2. **只展示画像名称列表**（不展示详情），格式：
+2. **解析画像列表**：运行 `list` 后，读取输出**首行** `NICKNAMES:`（逗号分隔的昵称）获取全部画像名称（其余行为人类可读详情，可忽略）；向用户展示这些名称，用 AskUserQuestion 让用户选择操作方式。展示格式示例：
 ```
 📋 已找到以下画像：
 1. [昵称1]
@@ -98,7 +98,7 @@ agent_created: true
 4. 保存为新画像（`profile_manager.py set <新昵称> --json-file _tmp_profile.json`），不影响已有画像
 5. 后续 Step 2~7 均基于新画像执行
 
-**画像完整度反馈**：画像保存后，告知用户当前画像完整度（如"画像完整度 70%，缺失：尺码、香调。补充这些信息可提升推荐精度"），但不强制补充。
+**画像完整度反馈**：画像保存后，运行 `python scripts/profile_manager.py completeness <昵称>` 获取完整度分数与缺失项，告知用户（如"画像完整度 70%，缺失：尺码、香调。补充这些信息可提升推荐精度"），但不强制补充。
 
 **Step 1 完成标志**：画像已读取/创建并确认，有 `set` 保存或确认无变化。
 
@@ -108,7 +108,7 @@ agent_created: true
 
 > 📌 **存储约定**：`relationship_stage` 是画像的**持久字段**（见 `references/profile-schema.md`）。若画像已有该值，作为本次默认值带出确认；首条消息明示新阶段（如"热恋期""刚结婚"）则直接覆盖，不重复提问。
 
-> 🔴 **此步必须在 Step 1 之后、Step 3 之前完成关系阶段写入。用户仅说“女朋友/老婆/心仪对象”不足以推断阶段，必须提问。**
+> 🔴 **此步必须在 Step 1 之后、Step 3 之前完成关系阶段写入。用户仅说"女朋友/老婆/心仪对象"等关系称谓本身不足以推断阶段，必须提问；仅当首条消息命中 `references/relationship-stages.md` 的"明示触发词表"时才直接采用，不提问。**
 
 > 🔴 **若首条描述中已明确给出或可无歧义映射到阶段（例如“热恋期”“交往半年”“刚结婚”），直接写入 `relationship_stage` 并跳过 AskUserQuestion，不再要求用户确认。只有缺失或歧义时，才使用 AskUserQuestion 单独提问；收到回答前不得进入 Step 3。**
 
@@ -283,7 +283,11 @@ agent_created: true
 #### 阶段 3：淘宝/京东价格与评价（P1，需登录）
 - **淘宝**（需登录态）：搜索商品 → 按销量排序取头部 5-8 家 → 记录到手价、券后价、月销、店铺类型、评价区好评+差评各 5-10 条、**商品主图直接图片地址**、**商品详情页直接 URL**
 - **京东**（比价层 + 优先图片源）：商品页免登可读价格与部分评价 → **优先采集京东商品主图**
-- 每个候选商品必须获取 **淘宝 + 京东** 双渠道报价
+- 每个候选商品按已就绪渠道采集报价：
+- 双渠道就绪：必须采集淘宝 + 京东双报价，置信度=高
+- 单渠道就绪：仅采集该渠道报价，另一渠道标注 N/A，置信度=中
+- 无渠道就绪：用搜索引擎聚合价（标注"非实时价"），置信度=低
+禁止用搜索页链接冒充商品详情页链接
 
 > 🔴 **链接硬性规则**：
 > - **图片地址**（`{{GIFT_IMG}}`）：必须采集 `<img>` 标签的 `src` 属性值，即直接图片 CDN 地址（如 `https://img10.360buyimg.com/n1/jfs/...`、`https://img.alicdn.com/imgextra/...`）。**禁止**使用商品页面 URL 或搜索页面 URL 作为图片地址。
@@ -352,11 +356,13 @@ agent_created: true
    ⚠️ 注意：[风险提示，如"鲜花需当日送达"、"某渠道只有一个报价"]
    ```
 3. 告知用户："完整报告已保存为 HTML 文件，双击浏览器打开即可，手机上也能看（已适配移动端）。"
-4. 交付成功后删除 `memory.json`
 
-交付后提供一次轻量反馈机会：用 AskUserQuestion 问"推荐满意吗？"
-选项：满意，就这样 / Top1 不太行，换一批 / 某个太贵了，调整预算 / 她可能有类似的了
-用户反馈写入 `gift_history` 用于下次优化。
+**反馈与画像更新（交付后）**：
+- 用 AskUserQuestion 问"推荐满意吗？" 选项：满意，就这样 / Top1 不太行，换一批 / 某个太贵了，调整预算 / 她可能有类似的了
+- 将用户反馈写入 `memory.json` 的 `gift_history_entry` 字段（结构见 `references/memory-schema.md`）
+- 调用 `python scripts/profile_manager.py set <昵称> --json-file <从 memory.json 提取的 gift_history patch>` 将本次礼物与反馈写入画像 `gift_history`
+- **画像更新成功后**再删除 `memory.json`（确保反馈已落盘画像，不丢失）；若用户选择"换一批/调预算"，按反馈重新进入 Step 6 / Step 3，暂不删除 `memory.json` 直到最终交付
+- 用户反馈写入 `gift_history` 用于下次优化避重
 
 ## 硬性规则
 
@@ -380,5 +386,7 @@ agent_created: true
 | `references/budget-advisor.md` | Step 3 预算建议 |
 | `references/seasonal-guide.md` | Step 6 季节理由 |
 | `references/html-spec.md` + `assets/report-template.html` | Step 7 报告生成 |
+| `references/memory-schema.md` | Step 6/7 中间数据 memory.json 结构与写入时机 |
 | `scripts/profile_manager.py` | 画像读写 |
+| `scripts/login_manager.py` | 登录态管理 |
 | `scripts/login_manager.py` | 登录态管理 |
