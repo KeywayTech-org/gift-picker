@@ -8,6 +8,8 @@
 
 ## 一、阶段基准预算
 
+> 📌 **权威数值定义见 `references/stages.json`**（字段 `budget_range` / `median`）。下表为衍生说明，修改阶段预算只需改 `stages.json` 一处。
+
 按关系阶段给出推荐预算区间：
 
 | 阶段 | 基准区间 | 中位数 | 说明 |

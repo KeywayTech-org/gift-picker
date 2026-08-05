@@ -1,0 +1,10 @@
+{
+  "stages": [
+    {"key": "pursuit",     "cn": "追求期",   "budget_range": [80, 300],     "median": 180},
+    {"key": "honeymoon",   "cn": "热恋期",   "budget_range": [200, 800],    "median": 400},
+    {"key": "stable",      "cn": "稳定期",   "budget_range": [300, 3000],   "median": 800},
+    {"key": "newlywed",    "cn": "新婚期",   "budget_range": [1000, 10000], "median": 3000},
+    {"key": "anniversary", "cn": "周年纪念", "budget_range": [300, 5000],   "median": 1000},
+    {"key": "longterm",    "cn": "长期陪伴", "budget_range": [200, 3000],   "median": 600}
+  ]
+}

@@ -34,7 +34,7 @@
   "diet_taboo": ["忌口"],
   "owned_items": ["已拥有的重要物品，避免重复送"],
   "budget_habit": "历史送礼预算习惯（可空）",
-  "gift_history": [{"date": "YYYY-MM-DD", "gift": "礼物", "feedback": "反馈"}],
+  "gift_history": [{"date": "YYYY-MM-DD", "gift": "礼物", "feedback": "positive|neutral|negative", "note": "可选备注"}],
   "notes": "其他备注",
   "updated_at": "YYYY-MM-DD"
 }
