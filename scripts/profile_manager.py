@@ -37,6 +37,13 @@ EXTEND_LIST_FIELDS = {"colors_like", "colors_dislike", "allergies", "diet_taboo"
 
 MAX_NICKNAME_LENGTH = 50
 
+# 画像完整度权重（见 references/profile-schema.md）
+COMPLETENESS_WEIGHTS = {
+    "nickname": 15, "relationship": 15, "relationship_stage": 15, "allergies": 15,
+    "colors_like": 10, "style": 10, "hobbies": 10, "skincare_brands": 10,
+    "scent": 5, "sizes": 5, "makeup_brands": 5, "owned_items": 5,
+}
+
 # 关系阶段中文映射
 STAGE_CN = {
     "pursuit": "追求",
@@ -173,9 +180,38 @@ def _escape_text(text: str) -> str:
     return html.escape(str(text))
 
 
+def _is_filled(v) -> bool:
+    """判断字段是否已填（非空 list/dict/str 视为已填，None/空视为未填）。"""
+    if v is None:
+        return False
+    if isinstance(v, (list, dict, str)) and len(v) == 0:
+        return False
+    return True
+
+
+def _completeness(data: dict) -> int:
+    """计算画像完整度（0-100），权重见 COMPLETENESS_WEIGHTS。"""
+    return sum(w for k, w in COMPLETENESS_WEIGHTS.items() if _is_filled(data.get(k)))
+
+
+def cmd_completeness(args):
+    p = _path(args.nickname)
+    if not p.exists():
+        sys.exit(f"未找到画像：{args.nickname}")
+    data = _load(p)
+    score = _completeness(data)
+    print(f"COMPLETENESS:{score}")
+    print(f"画像完整度：{score}%")
+    missing = [k for k, w in COMPLETENESS_WEIGHTS.items() if w > 0 and not _is_filled(data.get(k))]
+    if missing:
+        print(f"缺失字段：{', '.join(missing)}")
+
+
 def cmd_list(_args):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     names = sorted(p.stem for p in PROFILE_DIR.glob("*.json"))
+    # 机器可解析行（首行，供 Agent 程序化解析），其余行为人类可读详情
+    print(f"NICKNAMES:{','.join(names)}")
     if not names:
         print("（暂无画像）")
         return
@@ -338,11 +374,14 @@ def main():
     s.add_argument("--stdin", action="store_true", help="从标准输入读取 JSON")
     d = sub.add_parser("delete"); d.add_argument("nickname"); d.add_argument("--confirm", action="store_true")
     sub.add_parser("migrate", help="迁移旧版画像到当前 schema")
+    c = sub.add_parser("completeness", help="计算画像完整度（0-100）")
+    c.add_argument("nickname")
     args = ap.parse_args()
     if not args.cmd:
         ap.print_help()
         sys.exit(1)
-    {"list": cmd_list, "get": cmd_get, "set": cmd_set, "delete": cmd_delete, "migrate": cmd_migrate}[args.cmd](args)
+    {"list": cmd_list, "get": cmd_get, "set": cmd_set, "delete": cmd_delete,
+     "migrate": cmd_migrate, "completeness": cmd_completeness}[args.cmd](args)
 
 
 if __name__ == "__main__":

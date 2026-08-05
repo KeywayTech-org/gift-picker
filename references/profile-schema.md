@@ -128,6 +128,19 @@
 - 品类倾向：**由系统根据画像字段自动推断，绝对禁止询问用户**
 - 评分偏好：**固定为均衡权重（20/25/20/15/20），绝对禁止询问用户**
 
+## 画像完整度算法
+
+用于评估画像信息充分程度（0~100），在 Step 1 保存后反馈缺失项，帮助提升推荐精度。
+
+| 权重 | 字段 |
+|------|------|
+| 必填（各 15%） | nickname, relationship, relationship_stage, allergies |
+| 重要（各 10%） | colors_like, style, hobbies, skincare_brands |
+| 辅助（各 5%） | scent, sizes, makeup_brands, owned_items |
+| 可选（0%） | notes, gift_history, budget_habit |
+
+**计算口径**：完整度 = Σ(已填字段权重)。"已填"指字段存在且非空——list/dict 非空、字符串非空；`null` 或空值不计入。
+
 ## 更新原则
 
 - 增量合并：只传变化字段。

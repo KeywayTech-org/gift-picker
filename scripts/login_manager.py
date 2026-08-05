@@ -15,12 +15,19 @@
   python login_manager.py check taobao --url https://...   # 自定义校验页面
 """
 import argparse
+import io
 import json
 import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+
+# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8（与 profile_manager.py 一致）
+if sys.platform == "win32":
+    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -118,7 +125,7 @@ def _save_storage_state(context, channel: str):
     return path
 
 
-def _load_storage_state(channel: str) -> dict | None:
+def _load_storage_state(channel: str) -> Optional[dict]:
     """加载已保存的存储态。"""
     path = _session_path(channel)
     if not path.exists():
@@ -344,7 +351,7 @@ def cmd_check(args):
             else:
                 # 方式2：使用 Storage State JSON 文件
                 browser = p.chromium.launch(headless=True)
-                if state.get("cookies"):
+                if (state or {}).get("cookies"):
                     context = browser.new_context(storage_state=str(state_path))
                     page = context.new_page()
                 else:
@@ -435,7 +442,7 @@ def cmd_check_and_login(args):
             else:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context(
-                    storage_state=str(state_path) if state.get("cookies") else None
+                    storage_state=str(state_path) if (state or {}).get("cookies") else None
                 )
                 page = context.new_page()
 
