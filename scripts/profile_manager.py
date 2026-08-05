@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import html
 import io
 from datetime import date
@@ -44,15 +45,23 @@ COMPLETENESS_WEIGHTS = {
     "scent": 5, "sizes": 5, "makeup_brands": 5, "owned_items": 5,
 }
 
-# 关系阶段中文映射
-STAGE_CN = {
-    "pursuit": "追求",
-    "honeymoon": "热恋",
-    "stable": "稳定",
-    "newlywed": "新婚",
-    "anniversary": "周年",
-    "longterm": "陪伴",
-}
+# 关系阶段中文映射：优先从 references/stages.json 读取（单一真相源），
+# 文件缺失/损坏时回退到内置字典，保证脚本独立可用。
+_STAGES_JSON = Path(__file__).parent.parent / "references" / "stages.json"
+
+
+def _load_stage_cn() -> dict:
+    try:
+        data = json.loads(_STAGES_JSON.read_text(encoding="utf-8"))
+        return {s["key"]: s["cn"] for s in data.get("stages", [])}
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return {
+            "pursuit": "追求期", "honeymoon": "热恋期", "stable": "稳定期",
+            "newlywed": "新婚期", "anniversary": "周年纪念", "longterm": "长期陪伴",
+        }
+
+
+STAGE_CN = _load_stage_cn()
 
 
 def _auto_nickname(patch: dict) -> str:
@@ -122,28 +131,52 @@ def _path(nickname: str) -> Path:
     return PROFILE_DIR / f"{safe}.json"
 
 
-def _load(p: Path) -> dict:
+def _load(p: Path, corrupt_tolerant: bool = False) -> dict:
     if not p.exists():
         return {}
     try:
         return json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        sys.exit(f"错误：{p} 内容损坏，请人工检查后再操作（未做任何修改）")
-
-
-def _atomic_write(p: Path, data: dict):
-    """原子写入：写临时文件 + rename，避免写入中断导致数据损坏。"""
-    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(p.parent), suffix=".json.tmp")
-    try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, str(p))
-    except Exception:
+        if not corrupt_tolerant:
+            sys.exit(f"错误：{p} 内容损坏，请人工检查后再操作（未做任何修改）")
+        # 损坏容错模式：备份原文件 + 返回空画像，避免一个坏文件阻塞整个 list
+        backup = p.with_suffix(f".json.corrupt.{int(time.time())}")
         try:
-            os.unlink(tmp_path)
+            p.rename(backup)
         except OSError:
             pass
-        raise
+        print(f"⚠️  画像 {p.stem} 损坏，已备份到 {backup}，本次按空画像处理")
+        return {}
+
+
+def _atomic_write(p: Path, data: dict, max_retries: int = 3):
+    """原子写入：写临时文件 + rename，避免写入中断导致数据损坏。
+    Windows 下偶发 PermissionError（文件被占用），按指数退避重试后再抛。"""
+    last_err = None
+    for attempt in range(max_retries):
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(p.parent), suffix=".json.tmp")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, str(p))
+            return
+        except PermissionError as e:
+            last_err = e
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    if last_err:
+        raise last_err
 
 
 def _deep_merge(base: dict, patch: dict) -> dict:
@@ -160,6 +193,8 @@ def _deep_merge(base: dict, patch: dict) -> dict:
             _deep_merge(base[k], v)
         elif k in APPEND_LIST_FIELDS and isinstance(v, list) and isinstance(base.get(k), list):
             base[k].extend(v)
+            if k == "gift_history":
+                _sanitize_gift_history(base[k])
         elif k in EXTEND_LIST_FIELDS and isinstance(v, list) and isinstance(base.get(k), list):
             base[k].extend(item for item in v if item not in base[k])
         else:
@@ -207,6 +242,29 @@ def cmd_completeness(args):
         print(f"缺失字段：{', '.join(missing)}")
 
 
+VALID_FEEDBACK = {"positive", "neutral", "negative"}
+
+
+def _sanitize_gift_history(entries):
+    """将 gift_history 中非法的 feedback 值规范为 neutral，避免污染画像。"""
+    for e in entries:
+        if isinstance(e, dict):
+            fb = e.get("feedback")
+            if fb not in VALID_FEEDBACK:
+                print(f"⚠️  gift_history.feedback 值非法（{fb!r}），已规范为 neutral")
+                e["feedback"] = "neutral"
+
+
+def _memory_path() -> Path:
+    """memory.json 路径：环境变量 GIFT_PICKER_MEMORY_PATH 优先，否则为 skill 根目录。
+    用 realpath 解析 symlink，确保通过软链加载 skill 时仍写入真实根目录。"""
+    env = os.environ.get("GIFT_PICKER_MEMORY_PATH")
+    if env:
+        return Path(env)
+    skill_dir = Path(os.path.realpath(__file__)).parent.parent
+    return skill_dir / "memory.json"
+
+
 def cmd_list(_args):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     names = sorted(p.stem for p in PROFILE_DIR.glob("*.json"))
@@ -216,7 +274,7 @@ def cmd_list(_args):
         print("（暂无画像）")
         return
     for n in names:
-        d = _load(PROFILE_DIR / f"{n}.json")
+        d = _load(PROFILE_DIR / f"{n}.json", corrupt_tolerant=True)
         rel = _escape_text(d.get("relationship", "?"))
         updated = _escape_text(str(d.get("updated_at", "?")))
         print(f"- {n}  (关系: {rel}, 更新: {updated})")
@@ -279,6 +337,8 @@ def cmd_set(args):
         data = _load(p)
         created = not p.exists()
         data = _deep_merge(data, patch)
+        if isinstance(data.get("gift_history"), list):
+            _sanitize_gift_history(data["gift_history"])
         data["nickname"] = nickname
         data["schema_version"] = SCHEMA_VERSION
         data["updated_at"] = date.today().isoformat()
@@ -301,8 +361,7 @@ def cmd_set(args):
 
     # 新建画像时清理会话记忆，确保不掺杂之前信息
     if created:
-        skill_dir = Path(__file__).parent.parent
-        memory_file = skill_dir / "memory.json"
+        memory_file = _memory_path()
         if memory_file.exists():
             try:
                 memory_file.unlink()
