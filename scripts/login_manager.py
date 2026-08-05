@@ -22,7 +22,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+try:
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+except ImportError:
+    print("❌ 未安装 Playwright。请运行：pip install playwright && playwright install chromium")
+    print("   或使用 '跳过登录，用公开数据' 模式继续（置信度低）")
+    sys.exit(2)
 
 SESSION_DIR = Path(os.environ.get(
     "GIFT_PICKER_SESSION_HOME",

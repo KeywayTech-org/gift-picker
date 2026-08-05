@@ -44,7 +44,7 @@ STAGE_CN = {
     "stable": "稳定",
     "newlywed": "新婚",
     "anniversary": "周年",
-    "long_term": "陪伴",
+    "longterm": "陪伴",
 }
 
 
@@ -308,8 +308,15 @@ def cmd_migrate(_args):
     for n in names:
         p = PROFILE_DIR / f"{n}.json"
         data = _load(p)
+        changed = False
+        # 迁移字段值命名：long_term -> longterm（与 STAGE_CN / 各 reference 文档统一）
+        if data.get("relationship_stage") == "long_term":
+            data["relationship_stage"] = "longterm"
+            changed = True
         if "schema_version" not in data:
             data = _ensure_schema(data)
+            changed = True
+        if changed:
             _atomic_write(p, data)
             migrated += 1
             print(f"  已迁移：{n}")
