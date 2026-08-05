@@ -15,17 +15,16 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 import time
 import html
-import io
+import unicodedata
 from datetime import date
 from pathlib import Path
 
-# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8
-if sys.platform == "win32":
-    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+from _compat import ensure_utf8_stdio, atomic_write
+
+# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8（与 login_manager.py 共用 _compat）
+ensure_utf8_stdio()
 
 PROFILE_DIR = Path(os.environ.get("GIFT_PICKER_HOME", str(Path.home() / ".workbuddy" / "gift-picker" / "profiles")))
 SCHEMA_VERSION = 1
@@ -97,12 +96,12 @@ def _auto_nickname(patch: dict) -> str:
             color = colors[0] if isinstance(colors[0], str) else str(colors[0])
             parts.append(color)
 
-    # 4. 兜底
+    # 4. 兜底（确定性：基于 patch 内容 hash 选词，保证同 patch 两次生成相同昵称）
     if len(parts) <= (1 if stage and stage in STAGE_CN else 0):
-        import random
         adjectives = ["小可爱", "小仙女", "宝贝", "甜心"]
+        key = "|".join(f"{k}={v}" for k, v in sorted(patch.items()))
+        parts.append(adjectives[abs(hash(key)) % len(adjectives)])
         suffix = patch.get("nickname", "") or patch.get("name", "") or "她"
-        parts.append(random.choice(adjectives))
         if suffix and isinstance(suffix, str):
             parts.append(suffix[:4])
 
@@ -115,12 +114,24 @@ def _auto_nickname(patch: dict) -> str:
 
 
 def _sanitize_nickname(nickname: str) -> str:
-    """清理昵称中的非法字符。"""
-    safe = "".join(c for c in nickname if c not in '\\/:*?"<>|').strip()
+    """清理昵称：NFKC 归一化 + 去除零宽/不可见控制字符 + 剔除路径非法字符。
+
+    - unicodedata.normalize('NFKC') 处理全角、兼容等价字符
+    - 过滤零宽空格(\u200b)、字节序标记(\ufeff)等 Cf 类不可见控制字符
+    - 剔除 \\ / : * ? " < > | 等文件系统非法字符
+    """
+    if not nickname:
+        return ""
+    n = unicodedata.normalize("NFKC", nickname)
+    n = "".join(c for c in n if unicodedata.category(c) != "Cf")
+    safe = "".join(c for c in n if c not in '\\/:*?"<>|').strip()
     return safe[:MAX_NICKNAME_LENGTH]
 
 
 def _path(nickname: str) -> Path:
+    # 先对原始输入做边界校验，拒绝首尾空格 / 以点结尾等非法形态
+    if nickname != nickname.strip() or nickname.endswith("."):
+        sys.exit("错误：昵称不能含首尾空格或以点结尾")
     safe = "".join(c for c in nickname if c not in '\\/:*?"<>|').strip()
     if not safe:
         sys.exit("错误：昵称不合法")
@@ -149,36 +160,6 @@ def _load(p: Path, corrupt_tolerant: bool = False) -> dict:
         return {}
 
 
-def _atomic_write(p: Path, data: dict, max_retries: int = 3):
-    """原子写入：写临时文件 + rename，避免写入中断导致数据损坏。
-    Windows 下偶发 PermissionError（文件被占用），按指数退避重试后再抛。"""
-    last_err = None
-    for attempt in range(max_retries):
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(p.parent), suffix=".json.tmp")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, str(p))
-            return
-        except PermissionError as e:
-            last_err = e
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            if attempt == max_retries - 1:
-                raise
-            time.sleep(0.5 * (attempt + 1))
-        except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
-    if last_err:
-        raise last_err
-
-
 def _deep_merge(base: dict, patch: dict) -> dict:
     """dict 递归合并；list 特殊规则：
     - APPEND_LIST_FIELDS（gift_history）：追加
@@ -196,7 +177,8 @@ def _deep_merge(base: dict, patch: dict) -> dict:
             if k == "gift_history":
                 _sanitize_gift_history(base[k])
         elif k in EXTEND_LIST_FIELDS and isinstance(v, list) and isinstance(base.get(k), list):
-            base[k].extend(item for item in v if item not in base[k])
+            existing = set(base[k])
+            base[k].extend(item for item in v if item not in existing)
         else:
             base[k] = v
     return base
@@ -273,11 +255,14 @@ def cmd_list(_args):
     if not names:
         print("（暂无画像）")
         return
+    # 批量拼接后单次 print，减少 UTF-8 包装器的多次 flush 开销（见任务 4.8）
+    detail = []
     for n in names:
         d = _load(PROFILE_DIR / f"{n}.json", corrupt_tolerant=True)
         rel = _escape_text(d.get("relationship", "?"))
         updated = _escape_text(str(d.get("updated_at", "?")))
-        print(f"- {n}  (关系: {rel}, 更新: {updated})")
+        detail.append(f"- {n}  (关系: {rel}, 更新: {updated})")
+    print("\n".join(detail))
 
 
 def cmd_get(args):
@@ -288,7 +273,8 @@ def cmd_get(args):
     print(json.dumps(data, ensure_ascii=False, indent=2))
 
 
-def cmd_set(args):
+def _parse_patch(args) -> dict:
+    """从 --json / --json-file / --stdin 解析 patch，非法则退出。"""
     if args.json:
         try:
             patch = json.loads(args.json)
@@ -300,7 +286,6 @@ def cmd_set(args):
         except (json.JSONDecodeError, OSError) as e:
             sys.exit(f"错误：--json-file 读取失败：{e}")
     elif args.stdin:
-        # 从标准输入读取 JSON（推荐用于 Codex，避免命令行引号问题）
         try:
             patch = json.loads(sys.stdin.read())
         except json.JSONDecodeError as e:
@@ -309,30 +294,24 @@ def cmd_set(args):
         sys.exit("错误：需要 --json 或 --json-file 或 --stdin")
     if not isinstance(patch, dict):
         sys.exit("错误：patch 必须是 JSON 对象")
+    return patch
 
-    # 自动生成昵称（当 --auto-name 或昵称为空时）
-    auto_nickname = args.auto_name if hasattr(args, 'auto_name') and args.auto_name else (not args.nickname or args.nickname == "auto")
-    if auto_nickname:
-        nickname = _auto_nickname(patch)
-        print(f"🤖 自动生成昵称：{nickname}")
-        print(f"NICKNAME_SUGGESTED:{nickname}")
-    else:
-        nickname = args.nickname
 
-    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    p = _path(nickname)
+def _backup_profile(p: Path):
+    """写入前备份画像；不存在则返回 None。失败时退出。"""
+    if not p.exists():
+        return None
+    backup = p.with_suffix(".json.bak")
+    try:
+        backup.write_bytes(p.read_bytes())
+    except OSError as e:
+        sys.exit(f"错误：备份失败：{e}")
+    return backup
 
-    # 写入前备份
-    backup = p.with_suffix(".json.bak") if p.exists() else None
-    if backup:
-        try:
-            backup.write_bytes(p.read_bytes())
-        except OSError as e:
-            sys.exit(f"错误：备份失败：{e}")
 
-    # 记录临时 JSON 文件路径（用于成功后清理）
-    json_file_path = args.json_file if hasattr(args, 'json_file') and args.json_file else None
-
+def _apply_merge_and_save(p: Path, patch: dict, nickname: str) -> bool:
+    """增量合并 patch 并原子写入；失败回滚备份。返回是否新建画像。"""
+    backup = _backup_profile(p)
     try:
         data = _load(p)
         created = not p.exists()
@@ -342,42 +321,65 @@ def cmd_set(args):
         data["nickname"] = nickname
         data["schema_version"] = SCHEMA_VERSION
         data["updated_at"] = date.today().isoformat()
-        _atomic_write(p, data)
+        atomic_write(p, data)
     except Exception:
-        # 恢复备份
         if backup and backup.exists():
             try:
                 backup.replace(p)
             except OSError:
                 pass
         raise
-
-    # 成功后清理备份
     if backup and backup.exists():
         try:
             backup.unlink()
         except OSError:
             pass
+    return created
 
-    # 新建画像时清理会话记忆，确保不掺杂之前信息
-    if created:
-        memory_file = _memory_path()
-        if memory_file.exists():
-            try:
-                memory_file.unlink()
-                print(f"🧹 已清理之前的会话记忆，确保新画像信息全新")
-            except OSError:
-                pass
 
-    # 成功后清理临时 JSON 文件
-    if json_file_path:
-        tmp = Path(json_file_path)
-        if tmp.exists():
-            try:
-                tmp.unlink()
-                print(f"🧹 已清理临时数据文件")
-            except OSError:
-                pass
+def _cleanup_tmp(json_file_path):
+    """成功后清理临时 JSON 文件。"""
+    if not json_file_path:
+        return
+    tmp = Path(json_file_path)
+    if tmp.exists():
+        try:
+            tmp.unlink()
+            print("🧹 已清理临时数据文件")
+        except OSError:
+            pass
+
+
+def _cleanup_memory_if_new(created: bool):
+    """新建画像时清理会话记忆，确保不掺杂之前信息。"""
+    if not created:
+        return
+    memory_file = _memory_path()
+    if memory_file.exists():
+        try:
+            memory_file.unlink()
+            print("🧹 已清理之前的会话记忆，确保新画像信息全新")
+        except OSError:
+            pass
+
+
+def cmd_set(args):
+    patch = _parse_patch(args)
+    auto_nickname = getattr(args, "auto_name", False) or (not args.nickname or args.nickname == "auto")
+    if auto_nickname:
+        nickname = _auto_nickname(patch)
+        print(f"🤖 自动生成昵称：{nickname}")
+        print(f"NICKNAME_SUGGESTED:{nickname}")
+    else:
+        nickname = args.nickname
+
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    p = _path(nickname)
+    json_file_path = getattr(args, "json_file", None)
+
+    created = _apply_merge_and_save(p, patch, nickname)
+    _cleanup_memory_if_new(created)
+    _cleanup_tmp(json_file_path)
 
     print(f"{'已创建' if created else '已更新'}画像：{nickname}")
 
@@ -412,7 +414,7 @@ def cmd_migrate(_args):
             data = _ensure_schema(data)
             changed = True
         if changed:
-            _atomic_write(p, data)
+            atomic_write(p, data)
             migrated += 1
             print(f"  已迁移：{n}")
     if migrated:

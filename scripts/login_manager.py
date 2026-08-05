@@ -15,7 +15,6 @@
   python login_manager.py check taobao --url https://...   # 自定义校验页面
 """
 import argparse
-import io
 import json
 import os
 import sys
@@ -24,10 +23,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8（与 profile_manager.py 一致）
-if sys.platform == "win32":
-    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+from _compat import ensure_utf8_stdio, atomic_write
+
+# Windows 编码兼容：确保 stdin/stdout 使用 UTF-8（与 profile_manager.py 共用 _compat）
+ensure_utf8_stdio()
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -69,7 +68,7 @@ def _save_storage_state(context, channel: str):
         "version": 1,
     }
     path = _session_path(channel)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(path, state)
     return path
 
 
@@ -261,7 +260,7 @@ def cmd_login(args, hold_lock: bool = False):
 
                 while time.time() < deadline:
                     checked += 1
-                    time.sleep(3)
+                    time.sleep(min(1 + checked * 0.5, 3))
 
                     status = _check_login_status(page, channel)
                     last_status = status
@@ -289,7 +288,6 @@ def cmd_login(args, hold_lock: bool = False):
                                 except Exception:
                                     pass
 
-                        browser.close()
                         print(f"💡 下次使用时将自动复用此登录态，无需重新登录。")
                         return
                     else:
@@ -303,7 +301,6 @@ def cmd_login(args, hold_lock: bool = False):
                     print(f"   最后检测状态：{last_status['status']} - {last_status['reason']}")
                     print(f"💡 如果已完成登录但未保存，请使用 --timeout 参数增加等待时间，或重新执行登录。")
 
-                browser.close()
         except Exception as e:
             print(f"\n❌ 登录过程出错：{e}")
             print(f"LOGIN_STATUS:ERROR")

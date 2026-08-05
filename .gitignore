@@ -8,6 +8,7 @@ memory.md
 memory.json
 profiles/
 sessions/
+.workbuddy/
 
 # Python 缓存
 __pycache__/

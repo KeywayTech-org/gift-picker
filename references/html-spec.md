@@ -24,8 +24,7 @@ safe_text = html.escape(original_text)
 
 - `{{GIFT_NAME}}` - 商品名称（textContent）
 - `{{PRICE_MIN}}` - 价格（数字也转义，防止异常值注入属性）
-- `{{RANK}}` - 排名
-- `{{RANK_LABEL}}` - 第 1 名为“最推荐”，其余为“推荐第 N 名”
+- `{{RANK}}` - 排名（"最推荐"/"推荐第 N 名"由模板第 1 名 `top-pick` 角标与 RANK 数字自动呈现，无需单独标签占位符）
 - `{{CONF_TEXT}}` - 置信度文字（高/中/低）
 - `{{TOP1_SUMMARY}}` - Top1 一句话结论
 - `{{SOURCES_NOTE}}` - 数据来源说明，必须包含小红书口碑状态及未获取时的原因
@@ -53,8 +52,11 @@ safe_text = html.escape(original_text)
 | `{{REASON_LIST}}` | 多个 `<li>…</li>` 拼接 | 每条 `<li>` 内的理由文本 |
 | `{{MATCH_LIST}}` | 多个 `<li>…</li>` 拼接 | 每条 `<li>` 内的匹配点文本 |
 | `{{PRICE_ROWS}}` | 多个 `<tr><td>…</td>…</tr>` 拼接 | 渠道名、店铺名、价格字符串、采集时间、`<a>` 中的 href 属性（URL 需做白名单校验） |
+| `{{BUDGET_BOX}}` | 完整 `<div class="budget-box">…</div>` 预算区块（阶段预算建议）；模板内注释已标注为 B 类 | 预算区间、档位、建议理由等内部文本（逐段转义） |
+| `{{SEASON_BOX}}` | 完整 `<div class="season-box">…</div>` 季节区块；模板内注释已标注为 B 类 | 季节名称、季节理由等内部文本（逐段转义） |
+| `{{CATEGORY_COMPARE}}` | 完整品类对比网格 `<div class="category-compare">…</div>`；模板内注释已标注为 B 类 | 各品类名称、价格、评分、描述文本（逐段转义） |
 | `{{FLOWER_BLOCK}}` | 完整 `<div class="flower-box">…</div>` 或空字符串 | 花品种、颜色、花语、朵数、含义、场合、注意事项 |
-| `{{RANKED_GIFTS}}` | 按综合分降序拼接的多个完整 `.card`，第 1 名额外带 `top-pick` | 每个商品卡内的全部用户与采集文本，以及链接和图片 URL |
+| `<!-- BEGIN/END GIFT_CARD -->` 区块 | 模板用 `<!-- BEGIN GIFT_CARD -->…<!-- END GIFT_CARD -->` 包裹单张候选卡结构；系统按 `TOTAL_SCORE` 降序**逐卡复制该区块**并替换卡片级占位符（GIFT_NAME/RANK/PRICE_MIN/CONF_*/S_*/STAGE_REASON 等）生成候选列表，第 1 名额外带 `top-pick` class | 每个卡片内的全部用户与采集文本，以及链接和图片 URL（逐卡单独转义） |
 | `{{REVIEWS_BLOCK}}` | 2–3 个 `<div class="review-card">…</div>`；另在 `{{RISK_NOTES}}` 提炼 1 条主要风险或差评点 | 评论者昵称、评分显示、评论摘要、标签文字 |
 
 ---
@@ -64,7 +66,7 @@ safe_text = html.escape(original_text)
 - `{{S_PRICE}}`, `{{S_QUALITY}}`, `{{S_PRAISE}}`, `{{S_LOWBAD}}`, `{{S_STAGE}}` - 0–100 的评分数字（系统计算值）
 - `{{PAGE_TITLE}}`, `{{GEN_DATE}}`, `{{BUDGET}}`, `{{GIFT_COUNT}}` - 页面元信息（系统生成字符串）
 - `{{CONF_CLASS}}` - CSS class 名（`high`/`mid`/`low`，枚举值，非用户输入）
-- `{{RANK_CLASS}}` - CSS class 名；第 1 名为 `top-pick`，其余为空字符串
+- `{{RADAR_DATA}}` - Chart.js 雷达图数据 JSON 对象（系统生成，非用户输入；直接写入 `<script>` 中）
 
 ---
 
