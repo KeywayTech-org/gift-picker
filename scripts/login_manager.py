@@ -41,66 +41,14 @@ SESSION_DIR = Path(os.environ.get(
     str(Path(os.environ.get("GIFT_PICKER_HOME", str(Path.home() / ".workbuddy" / "gift-picker"))) / "sessions")
 ))
 
-# 各渠道配置：登录页URL、登录成功检测规则、校验页面、风控信号
-CHANNEL_CONFIG = {
-    "taobao": {
-        "name": "淘宝",
-        "login_url": "https://login.taobao.com/havanaone/login/login.htm",
-        "check_url": "https://www.taobao.com",
-        "success_signals": [
-            # 正向：需要同时满足多个条件才视为登录成功
-            {"type": "url_not_contains", "value": "login.taobao.com"},
-            {"type": "selector_exists", "value": ".user-info .user-nick"},
-            {"type": "selector_exists", "value": ".user-info .user-avatar"},
-            {"type": "text_contains", "selector": ".user-info", "value": "你好"},
-        ],
-        "fail_signals": [
-            # 负向：任一满足视为登录失效
-            {"type": "url_contains", "value": "login.taobao.com"},
-            {"type": "text_contains", "selector": "body", "value": "请登录"},
-            {"type": "selector_exists", "value": ".login-box"},
-        ],
-        "verify_urls": [
-            "https://buy.taobao.com/auction/buy_now.htm",  # 立即购买
-        ],
-    },
-    "jd": {
-        "name": "京东",
-        "login_url": "https://passport.jd.com/new/login.aspx",
-        "check_url": "https://www.jd.com",
-        "success_signals": [
-            # 京东首页需要登录才能看到用户信息
-            {"type": "selector_exists", "value": ".user-info .user-name"},
-            {"type": "selector_exists", "value": ".user-info .logout"},
-            {"type": "text_contains", "selector": ".user-info", "value": "你好"},
-            {"type": "selector_exists", "value": ".ft-user-name a"},
-        ],
-        "fail_signals": [
-            # 访问需要登录的页面来检测
-            {"type": "selector_exists", "value": ".login-mask"},
-            {"type": "text_contains", "selector": "body", "value": "你好,请登录"},
-            # 京东首页未登录时显示的登录按钮
-            {"type": "selector_exists", "value": ".login-item"},
-        ],
-        "verify_urls": [
-            "https://trade.jd.com/trade/order/productList.action",  # 订单页面，需登录
-        ],
-    },
-    "xiaohongshu": {
-        "name": "小红书",
-        "login_url": "https://www.xiaohongshu.com",
-        "check_url": "https://www.xiaohongshu.com",
-        "success_signals": [
-            {"type": "selector_exists", "value": ".user-home"},
-            {"type": "selector_exists", "value": ".avatar-container"},
-        ],
-        "fail_signals": [
-            {"type": "selector_exists", "value": ".login-mask"},
-            {"type": "text_contains", "selector": "body", "value": "登录后"},
-        ],
-        "verify_urls": [],
-    },
-}
+# 渠道配置外置到 assets/channels.json（修改渠道信号/新增渠道无需改代码）
+CHANNELS_JSON = Path(__file__).parent.parent / "assets" / "channels.json"
+try:
+    with open(CHANNELS_JSON, encoding="utf-8") as _f:
+        CHANNEL_CONFIG = json.load(_f)
+except (OSError, json.JSONDecodeError) as _e:
+    print(f"❌ 读取渠道配置失败：{CHANNELS_JSON}（{_e}）")
+    sys.exit(1)
 
 DEFAULT_TIMEOUT = 300  # 登录等待超时（秒）
 CHECK_TIMEOUT = 15000  # 单次检查超时（毫秒）
@@ -214,9 +162,61 @@ def _check_login_status(page, channel: str) -> dict:
     return {"status": "unknown", "reason": f"无法判断登录状态（仅{success_count}个成功信号匹配）"}
 
 
-def cmd_login(args):
+def _acquire_session_lock(channel: str, timeout: int = 30):
+    """跨平台互斥锁（免依赖）：防止两进程同时读写同一渠道 session 导致 Profile 损坏。
+    基于 msvcrt.locking(Windows) / fcntl.flock(Unix) 对 .lock 文件加独占锁。
+    OS 会在进程退出时自动释放锁，因此崩溃不会造成永久死锁。"""
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = SESSION_DIR / f"{channel}.lock"
+    deadline = time.time() + timeout
+    while True:
+        f = open(lock_path, "w")
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return f
+        except (OSError, IOError):
+            try:
+                f.close()
+            except Exception:
+                pass
+            if time.time() >= deadline:
+                sys.exit(f"⚠️  {channel} 渠道正在被其他进程操作，等待 {timeout}s 超时，已中止本次操作。")
+            print(f"⚠️  {channel} 渠道正被其他进程占用，等待锁释放（最多 {timeout}s）...")
+            time.sleep(1)
+
+
+def _release_session_lock(f):
+    """释放 _acquire_session_lock 获取的锁并关闭文件。"""
+    if f is None:
+        return
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            except (OSError, IOError):
+                pass
+        else:
+            import fcntl
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except (OSError, IOError):
+                pass
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
+
+
+def cmd_login(args, hold_lock: bool = False):
     """启动浏览器让用户手动登录，然后保存登录态。
-    
+
     登录成功后会输出：
     LOGIN_STATUS:OK
     LOGIN_CHANNEL:<channel>
@@ -230,82 +230,86 @@ def cmd_login(args):
     timeout = args.timeout or DEFAULT_TIMEOUT
     state_path = _session_path(channel)
 
-    print(f"🌐 即将打开 {config['name']} 登录页...")
-    print(f"⏰ 请在 {timeout} 秒内完成登录（扫码/账号密码）")
-    print(f"💾 登录成功后将自动保存状态到：{state_path}")
-    print(f"LOGIN_STATUS:PENDING")
-
+    lock = None if hold_lock else _acquire_session_lock(channel)
     try:
-        with sync_playwright() as p:
-            # 使用持久化上下文，避免每次重新登录
-            browser = p.chromium.launch_persistent_context(
-                user_data_dir=str(SESSION_DIR / f"{channel}_profile"),
-                headless=False,
-                viewport={"width": 1280, "height": 800},
-            )
+        print(f"🌐 即将打开 {config['name']} 登录页...")
+        print(f"⏰ 请在 {timeout} 秒内完成登录（扫码/账号密码）")
+        print(f"💾 登录成功后将自动保存状态到：{state_path}")
+        print(f"LOGIN_STATUS:PENDING")
 
-            page = browser.pages[0] if browser.pages else browser.new_page()
+        try:
+            with sync_playwright() as p:
+                # 使用持久化上下文，避免每次重新登录
+                browser = p.chromium.launch_persistent_context(
+                    user_data_dir=str(SESSION_DIR / f"{channel}_profile"),
+                    headless=False,
+                    viewport={"width": 1280, "height": 800},
+                )
 
-            try:
-                page.goto(config["login_url"], wait_until="domcontentloaded", timeout=30000)
-                print(f"📄 页面已打开，请在浏览器中完成登录...")
-            except PlaywrightTimeout:
-                print(f"⚠️  页面加载超时，但浏览器已打开，请继续登录...")
+                page = browser.pages[0] if browser.pages else browser.new_page()
 
-            # 等待登录成功
-            deadline = time.time() + timeout
-            checked = 0
-            last_status = None
-            
-            while time.time() < deadline:
-                checked += 1
-                time.sleep(3)
+                try:
+                    page.goto(config["login_url"], wait_until="domcontentloaded", timeout=30000)
+                    print(f"📄 页面已打开，请在浏览器中完成登录...")
+                except PlaywrightTimeout:
+                    print(f"⚠️  页面加载超时，但浏览器已打开，请继续登录...")
 
-                status = _check_login_status(page, channel)
-                last_status = status
-                remaining = max(0, int(deadline - time.time()))
+                # 等待登录成功
+                deadline = time.time() + timeout
+                checked = 0
+                last_status = None
 
-                if status["status"] == "ok":
-                    # 登录成功，保存状态
-                    saved = _save_storage_state(browser, channel)
-                    print(f"\n✅ 登录成功！{config['name']}登录态已保存到：{saved}")
-                    print(f"   保存时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                    
-                    # 输出状态标记，供 Codex 解析
-                    print(f"LOGIN_STATUS:OK")
-                    print(f"LOGIN_CHANNEL:{channel}")
-                    print(f"LOGIN_SAVED:{saved}")
+                while time.time() < deadline:
+                    checked += 1
+                    time.sleep(3)
 
-                    # 如果需要验证页面（如购物车），额外检测
-                    if config.get("verify_urls"):
-                        for verify_url in config["verify_urls"]:
-                            try:
-                                page.goto(verify_url, wait_until="domcontentloaded", timeout=10000)
-                                v_status = _check_login_status(page, channel)
-                                if v_status["status"] != "ok":
-                                    print(f"   ⚠️  验证页面 {verify_url} 可能需要重新登录：{v_status['reason']}")
-                            except Exception:
-                                pass
+                    status = _check_login_status(page, channel)
+                    last_status = status
+                    remaining = max(0, int(deadline - time.time()))
 
-                    browser.close()
-                    print(f"💡 下次使用时将自动复用此登录态，无需重新登录。")
-                    return
-                else:
-                    if checked % 5 == 0:
-                        print(f"   ⏳ 等待登录中... ({remaining}秒剩余)")
+                    if status["status"] == "ok":
+                        # 登录成功，保存状态
+                        saved = _save_storage_state(browser, channel)
+                        print(f"\n✅ 登录成功！{config['name']}登录态已保存到：{saved}")
+                        print(f"   保存时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
-            # 超时
-            if last_status and last_status["status"] != "ok":
-                print(f"\n⏰ 登录等待超时（{timeout}秒）。")
-                print(f"LOGIN_STATUS:TIMEOUT")
-                print(f"   最后检测状态：{last_status['status']} - {last_status['reason']}")
-                print(f"💡 如果已完成登录但未保存，请使用 --timeout 参数增加等待时间，或重新执行登录。")
-            
-            browser.close()
-    except Exception as e:
-        print(f"\n❌ 登录过程出错：{e}")
-        print(f"LOGIN_STATUS:ERROR")
-        sys.exit(1)
+                        # 输出状态标记，供 Codex 解析
+                        print(f"LOGIN_STATUS:OK")
+                        print(f"LOGIN_CHANNEL:{channel}")
+                        print(f"LOGIN_SAVED:{saved}")
+
+                        # 如果需要验证页面（如购物车），额外检测
+                        if config.get("verify_urls"):
+                            for verify_url in config["verify_urls"]:
+                                try:
+                                    page.goto(verify_url, wait_until="domcontentloaded", timeout=10000)
+                                    v_status = _check_login_status(page, channel)
+                                    if v_status["status"] != "ok":
+                                        print(f"   ⚠️  验证页面 {verify_url} 可能需要重新登录：{v_status['reason']}")
+                                except Exception:
+                                    pass
+
+                        browser.close()
+                        print(f"💡 下次使用时将自动复用此登录态，无需重新登录。")
+                        return
+                    else:
+                        if checked % 5 == 0:
+                            print(f"   ⏳ 等待登录中... ({remaining}秒剩余)")
+
+                # 超时
+                if last_status and last_status["status"] != "ok":
+                    print(f"\n⏰ 登录等待超时（{timeout}秒）。")
+                    print(f"LOGIN_STATUS:TIMEOUT")
+                    print(f"   最后检测状态：{last_status['status']} - {last_status['reason']}")
+                    print(f"💡 如果已完成登录但未保存，请使用 --timeout 参数增加等待时间，或重新执行登录。")
+
+                browser.close()
+        except Exception as e:
+            print(f"\n❌ 登录过程出错：{e}")
+            print(f"LOGIN_STATUS:ERROR")
+            sys.exit(1)
+    finally:
+        _release_session_lock(lock)
 
 
 def cmd_check(args):
@@ -322,71 +326,75 @@ def cmd_check(args):
     check_url = args.url or config.get("check_url", config["login_url"])
     state_path = _session_path(channel)
 
-    state = _load_storage_state(channel)
-    if state is None:
-        print(f"❌ 未找到 {config['name']} 的登录态，请先执行 login 命令。")
-        print(f"CHECK_STATUS:NO_STATE")
-        return
-
-    # 显示保存时间
-    meta = state.get("_meta", {})
-    saved_at = meta.get("saved_at", "未知")
-    print(f"📋 检查 {config['name']} 登录态...")
-    print(f"   存储时间：{saved_at}")
-
+    lock = _acquire_session_lock(channel)
     try:
-        with sync_playwright() as p:
-            profile_dir = SESSION_DIR / f"{channel}_profile"
-            page = None
-            browser = None
-            context = None
+        state = _load_storage_state(channel)
+        if state is None:
+            print(f"❌ 未找到 {config['name']} 的登录态，请先执行 login 命令。")
+            print(f"CHECK_STATUS:NO_STATE")
+            return
 
-            if profile_dir.exists():
-                # 方式1：使用持久化 Profile 目录（最可靠，含全部浏览器状态）
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=True,
-                )
-                page = context.pages[0] if context.pages else context.new_page()
-            else:
-                # 方式2：使用 Storage State JSON 文件
-                browser = p.chromium.launch(headless=True)
-                if (state or {}).get("cookies"):
-                    context = browser.new_context(storage_state=str(state_path))
-                    page = context.new_page()
+        # 显示保存时间
+        meta = state.get("_meta", {})
+        saved_at = meta.get("saved_at", "未知")
+        print(f"📋 检查 {config['name']} 登录态...")
+        print(f"   存储时间：{saved_at}")
+
+        try:
+            with sync_playwright() as p:
+                profile_dir = SESSION_DIR / f"{channel}_profile"
+                page = None
+                browser = None
+                context = None
+
+                if profile_dir.exists():
+                    # 方式1：使用持久化 Profile 目录（最可靠，含全部浏览器状态）
+                    context = p.chromium.launch_persistent_context(
+                        user_data_dir=str(profile_dir),
+                        headless=True,
+                    )
+                    page = context.pages[0] if context.pages else context.new_page()
                 else:
-                    page = browser.new_page()
+                    # 方式2：使用 Storage State JSON 文件
+                    browser = p.chromium.launch(headless=True)
+                    if (state or {}).get("cookies"):
+                        context = browser.new_context(storage_state=str(state_path))
+                        page = context.new_page()
+                    else:
+                        page = browser.new_page()
 
-            try:
-                page.goto(check_url, wait_until="domcontentloaded", timeout=CHECK_TIMEOUT)
-            except PlaywrightTimeout:
-                print(f"⚠️  页面加载超时，但仍在检测登录态...")
+                try:
+                    page.goto(check_url, wait_until="domcontentloaded", timeout=CHECK_TIMEOUT)
+                except PlaywrightTimeout:
+                    print(f"⚠️  页面加载超时，但仍在检测登录态...")
 
-            status = _check_login_status(page, channel)
+                status = _check_login_status(page, channel)
 
-            if status["status"] == "ok":
-                print(f"✅ {config['name']} 登录态有效！")
-                print(f"   原因：{status['reason']}")
-                print(f"   当前页面：{page.url}")
-                print(f"CHECK_STATUS:OK")
-            elif status["status"] == "expired":
-                print(f"❌ {config['name']} 登录态已失效！")
-                print(f"   原因：{status['reason']}")
-                print(f"   请重新执行：python login_manager.py login {channel}")
-                print(f"CHECK_STATUS:EXPIRED")
-            else:
-                print(f"⚠️  无法判断 {config['name']} 的登录状态。")
-                print(f"   原因：{status['reason']}")
-                print(f"   当前页面：{page.url}")
-                print(f"CHECK_STATUS:UNKNOWN")
+                if status["status"] == "ok":
+                    print(f"✅ {config['name']} 登录态有效！")
+                    print(f"   原因：{status['reason']}")
+                    print(f"   当前页面：{page.url}")
+                    print(f"CHECK_STATUS:OK")
+                elif status["status"] == "expired":
+                    print(f"❌ {config['name']} 登录态已失效！")
+                    print(f"   原因：{status['reason']}")
+                    print(f"   请重新执行：python login_manager.py login {channel}")
+                    print(f"CHECK_STATUS:EXPIRED")
+                else:
+                    print(f"⚠️  无法判断 {config['name']} 的登录状态。")
+                    print(f"   原因：{status['reason']}")
+                    print(f"   当前页面：{page.url}")
+                    print(f"CHECK_STATUS:UNKNOWN")
 
-            if context:
-                context.close()
-            if browser:
-                browser.close()
-    except Exception as e:
-        print(f"❌ 检查过程出错：{e}")
-        print(f"CHECK_STATUS:ERROR")
+                if context:
+                    context.close()
+                if browser:
+                    browser.close()
+        except Exception as e:
+            print(f"❌ 检查过程出错：{e}")
+            print(f"CHECK_STATUS:ERROR")
+    finally:
+        _release_session_lock(lock)
 
 
 def cmd_check_and_login(args):
@@ -412,74 +420,78 @@ def cmd_check_and_login(args):
     timeout = args.timeout or DEFAULT_TIMEOUT
     state_path = _session_path(channel)
 
-    state = _load_storage_state(channel)
-    profile_dir = SESSION_DIR / f"{channel}_profile"
-
-    # 情况1：没有存储态文件且没有profile目录 → 直接打开浏览器登录
-    if state is None and not profile_dir.exists():
-        print(f"❌ 未找到 {config['name']} 登录态，即将打开浏览器跳转到登录页...")
-        print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
-        cmd_login(args)
-        return
-
-    # 情况2：有存储态 → 先检查是否有效
-    print(f"📋 检查 {config['name']} 登录态...")
-    
-    login_needed = False
-    
+    lock = _acquire_session_lock(channel)
     try:
-        with sync_playwright() as p:
-            page = None
-            browser = None
-            context = None
+        state = _load_storage_state(channel)
+        profile_dir = SESSION_DIR / f"{channel}_profile"
 
-            if profile_dir.exists():
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=True,
-                )
-                page = context.pages[0] if context.pages else context.new_page()
-            else:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    storage_state=str(state_path) if (state or {}).get("cookies") else None
-                )
-                page = context.new_page()
+        # 情况1：没有存储态文件且没有profile目录 → 直接打开浏览器登录
+        if state is None and not profile_dir.exists():
+            print(f"❌ 未找到 {config['name']} 登录态，即将打开浏览器跳转到登录页...")
+            print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
+            cmd_login(args, hold_lock=True)
+            return
 
-            try:
-                page.goto(config["check_url"], wait_until="domcontentloaded", timeout=CHECK_TIMEOUT)
-            except PlaywrightTimeout:
-                pass
+        # 情况2：有存储态 → 先检查是否有效
+        print(f"📋 检查 {config['name']} 登录态...")
 
-            status = _check_login_status(page, channel)
+        login_needed = False
 
-            if status["status"] == "ok":
-                print(f"✅ {config['name']} 登录态有效，可直接使用！")
-                print(f"CHECK_AND_LOGIN_STATUS:OK")
+        try:
+            with sync_playwright() as p:
+                page = None
+                browser = None
+                context = None
+
+                if profile_dir.exists():
+                    context = p.chromium.launch_persistent_context(
+                        user_data_dir=str(profile_dir),
+                        headless=True,
+                    )
+                    page = context.pages[0] if context.pages else context.new_page()
+                else:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context(
+                        storage_state=str(state_path) if (state or {}).get("cookies") else None
+                    )
+                    page = context.new_page()
+
+                try:
+                    page.goto(config["check_url"], wait_until="domcontentloaded", timeout=CHECK_TIMEOUT)
+                except PlaywrightTimeout:
+                    pass
+
+                status = _check_login_status(page, channel)
+
+                if status["status"] == "ok":
+                    print(f"✅ {config['name']} 登录态有效，可直接使用！")
+                    print(f"CHECK_AND_LOGIN_STATUS:OK")
+                    if context:
+                        context.close()
+                    if browser:
+                        browser.close()
+                    return
+                else:
+                    print(f"⚠️  {config['name']} 登录态已失效或无法判断（{status['reason']}）")
+                    print(f"🌐 即将打开 {config['name']} 登录页，请在浏览器中完成登录...")
+                    print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
+                    login_needed = True
+
                 if context:
                     context.close()
                 if browser:
                     browser.close()
-                return
-            else:
-                print(f"⚠️  {config['name']} 登录态已失效或无法判断（{status['reason']}）")
-                print(f"🌐 即将打开 {config['name']} 登录页，请在浏览器中完成登录...")
-                print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
-                login_needed = True
+        except Exception as e:
+            print(f"⚠️  检查过程出错：{e}")
+            print(f"🌐 即将打开 {config['name']} 登录页，请在浏览器中完成登录...")
+            print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
+            login_needed = True
 
-            if context:
-                context.close()
-            if browser:
-                browser.close()
-    except Exception as e:
-        print(f"⚠️  检查过程出错：{e}")
-        print(f"🌐 即将打开 {config['name']} 登录页，请在浏览器中完成登录...")
-        print(f"CHECK_AND_LOGIN_STATUS:NEED_LOGIN")
-        login_needed = True
-
-    # 情况3：登录态失效 → 自动打开浏览器让用户登录
-    if login_needed:
-        cmd_login(args)
+        # 情况3：登录态失效 → 自动打开浏览器让用户登录
+        if login_needed:
+            cmd_login(args, hold_lock=True)
+    finally:
+        _release_session_lock(lock)
 
 
 def cmd_list(_args):
