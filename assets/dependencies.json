@@ -1,0 +1,105 @@
+{
+  "version": "1.0",
+  "updated": "2026-08-05",
+  "description": "gift-picker skill 依赖的外部工具清单（不含 WorkBuddy 内置工具）。所有工具均为免费、零 API Key、零申请。",
+
+  "mcp_servers": [
+    {
+      "name": "cn-ecommerce-search",
+      "source": "shopmeskills/mcp@cn-ecommerce-search",
+      "source_url": "https://github.com/shopmeskills/mcp",
+      "license": "MIT",
+      "installs": 1000,
+      "config": {
+        "command": "npx",
+        "args": ["-y", "@shopmeagent/cn-ecommerce-search-mcp"]
+      },
+      "api_key_required": false,
+      "paid": false,
+      "tools": [
+        "search_products",
+        "get_product_detail",
+        "parse_product_link"
+      ],
+      "supported_platforms": ["taobao", "tmall", "xiaohongshu"],
+      "usage_in_skill": {
+        "social_signal_search": "小红书目标账号公开商品/笔记检索",
+        "candidate_search": "候选商品发现（按品牌+产品名搜索）",
+        "product_detail": "商品详情获取（价格+评价+店铺信息）"
+      },
+      "notes": "主比价源，替代慢慢买 MCP。Shopme 统一商品数据库，跨平台比价"
+    }
+  ],
+
+  "skills": [
+    {
+      "name": "crawl4ai-skill",
+      "source": "lancelin111/crawl4ai-skill",
+      "source_url": "https://github.com/lancelin111/crawl4ai-skill",
+      "installs": 828,
+      "install_command": "npx skills add lancelin111/crawl4ai-skill --skill crawl4ai-skill -g",
+      "api_key_required": false,
+      "paid": false,
+      "capability": [
+        "DuckDuckGo 搜索（免 API key）",
+        "动态页面 JS 渲染抓取",
+        "LLM 优化 Markdown 输出",
+        "全站爬取 / sitemap 识别"
+      ],
+      "usage_in_skill": {
+        "popularity_search": "补充公开热销/近期推荐来源",
+        "jd_product_detail": "抓取京东商品页（免登读价格+评价）"
+      },
+      "notes": "处理 WebFetch 抓不到的动态页面"
+    },
+    {
+      "name": "xiaohongshu-skill",
+      "source": "deliciousbuding/xiaohongshu-skill",
+      "source_url": "https://github.com/deliciousbuding/xiaohongshu-skill",
+      "installs": 33,
+      "install_command": "npx skills add deliciousbuding/xiaohongshu-skill --skill xiaohongshu-skill -g",
+      "api_key_required": false,
+      "paid": false,
+      "capability": [
+        "Playwright 驱动浏览器操作小红书",
+        "从 window.__INITIAL_STATE__ 取数据",
+        "搜索/笔记/评论/用户信息读取"
+      ],
+      "prerequisite": "用户首次需手动登录小红书一次，之后复用登录态",
+      "usage_in_skill": {
+        "social_signal_read": "小红书公开发布/转发、关注品牌和公开美妆账号信号读取"
+      },
+      "allowed_operations": ["读取公开内容", "读取用户已授权的当前登录态"],
+      "forbidden_operations": ["发布", "评论", "点赞", "读取私信", "读取收藏", "绕过验证码或风控"],
+      "notes": "仅作为公开只读信号来源；外部工具新增能力不自动获得本 Skill 授权"
+    }
+  ],
+
+  "python_deps": [
+    {
+      "name": "playwright",
+      "version": "latest",
+      "purpose": "微博登录态爬取（Step 2.2/2.3），与 xiaohongshu-skill 共用浏览器自动化基础",
+      "install": "pip install playwright && playwright install chromium"
+    },
+    {
+      "name": "crawl4ai",
+      "version": "latest",
+      "purpose": "动态页面抓取，与 crawl4ai-skill 配套",
+      "install": "pip install crawl4ai"
+    }
+  ],
+
+  "data_files": [
+    {
+      "path": "assets/beauty-categories.json",
+      "description": "47 个美妆护肤品类，5 档分级（T1-T5）+ 降级链",
+      "created": "2026-08-05"
+    },
+    {
+      "path": "assets/beauty-brands.json",
+      "description": "153 个品牌，5 档分级（luxe/premium/mid_high/mid/mass）",
+      "created": "2026-08-05"
+    }
+  ]
+}

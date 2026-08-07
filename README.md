@@ -1,143 +1,71 @@
-# 礼物挑选助手（gift-picker）
+# gift-picker
 
-帮男生为女朋友 / 老婆 / 心仪之人挑礼物的 AI skill。
+根据预算和对方公开的确定性商品信号，直接给出一个可购买的美妆护肤礼物。
 
-一次配置恋人画像，输入预算与场景，自动从多渠道采集候选商品、做四维评分与画像匹配，
-生成一份带图片、评分图表、AI 分析、多渠道比价与购买链接的 **HTML 礼物清单**。
+## 适用场景
 
----
+- “帮我给女朋友挑个七夕礼物，预算 800 元。”
+- “她公开发过某品牌某精华，预算 1200 元，帮我买同款。”
+- “老婆生日送什么美妆礼物？”
 
-## 核心能力
+只处理护肤、彩妆、香氛、身体护理和礼盒套装。最终只推荐一个商品，不展示候选清单。
 
-1. **恋人画像配置（持久化）**：颜色 / 护肤美妆品牌 / 穿衣风格 / 香调 / 尺码 / 兴趣 / 过敏忌口 / 已有物品避重。支持后续增量更新，存于用户目录 `~/.workbuddy/gift-picker/profiles/`，不随 skill 分发。
-2. **社媒 ID 一键画像（最高优先级）**：给她的小红书 / 微博 / B站 / 抖音号，自动分析公开内容，先在**对话内**（不落盘）生成喜好报告，你确认后再进入选品。
-3. **多渠道采集 + 四维评分**：价格 / 质量 / 优质好评度 / 差评率（反向）+ 独立的「画像匹配度」，数据不足时标注置信度，不编造。
-4. **HTML 礼物清单**：礼物卡片（图 / 名 / 价）+ 评分雷达图与评分条 + AI 推荐理由与匹配逐条对照 + 多渠道比价表 + 购买链接。
+## 快速使用
 
----
+将本目录作为 Agent Skill 安装或提供给支持 `SKILL.md` 的 runtime。直接用自然语言描述礼物意图和人民币预算即可。
+缺少预算时，Skill 只会补问预算一次。
 
-## 安装
+最终结果格式：
 
-### 方式一：WorkBuddy 用户（最常见）
-
-1. 把本目录软链 / 复制到 `~/.workbuddy/skills/gift-picker`。
-2. 免费路径开箱即用，无需任何 Key 或付费账户。
-3. 在对话中说：「帮我给女朋友挑生日礼物」即可触发。
-
-### 方式二：独立 Python 环境
-
-- 画像管理：`python scripts/profile_manager.py --help`
-- 本 skill 的 AI 编排逻辑写在 `SKILL.md`，需由支持 skill 的 Agent 运行时解释执行。
-
----
-
-## 在其他 Agent / 运行时中使用本 Skill
-
-本 Skill 采用 **Agent Skills 开放标准**编写（一个含 `SKILL.md` 的目录，frontmatter 含 `name` / `description`），可被遵循该标准的多种 Agent 直接加载，无需重写。下面列出常见运行时的安装方式。
-
-### WorkBuddy（原生运行时）
-见上方「安装 → 方式一」。本 Skill 为 WorkBuddy 设计，所有能力（browser-use 采集、WebSearch、交互式提问、HTML 报告预览）开箱即用。
-
-### Claude Code（Anthropic）
-Claude Code 原生支持 Agent Skills，目录约定：
-- 用户级（所有项目可用）：`~/.claude/skills/gift-picker/`（Windows：`C:\Users\<用户名>\.claude\skills\gift-picker\`）
-- 项目级（仅当前仓库）：`<项目>/.claude/skills/gift-picker/`
-
-```bash
-# 方式 A：从 GitHub 克隆
-git clone https://github.com/Keyway-tech/gift-picker ~/.claude/skills/gift-picker
-# 方式 B：通用 skills CLI
-npx skills add Keyway-tech/gift-picker -a claude
-```
-触发：在 Claude Code 中输入 `/gift-picker`，或描述任务让其按 `description` 自动匹配。
-
-### Codex（OpenAI）
-Codex 同样遵循 Agent Skills 标准，从 `.agents/skills` 发现技能：
-- 用户级：`~/.agents/skills/gift-picker/`（Windows：`C:\Users\<用户名>\.agents\skills\gift-picker\`）
-- 项目级：`<仓库>/.agents/skills/gift-picker/`
-- 机器级：`/etc/codex/skills/`（Linux / macOS）
-
-```bash
-# 方式 A：通用 skills CLI（指定 codex）
-npx skills add Keyway-tech/gift-picker -a codex -g
-# 方式 B：Codex 会话内内置安装器
-$skill-installer https://github.com/Keyway-tech/gift-picker
-# 方式 C：手动克隆
-git clone https://github.com/Keyway-tech/gift-picker ~/.agents/skills/gift-picker
-```
-触发：在 Codex 中输入 `$gift-picker`，或运行 `/skills` 浏览，或描述任务让其隐式匹配。
-
-### 通用 skills CLI（70+ Agent 适用）
-开源 `skills` CLI 支持 Codex、Claude Code、Cursor、OpenCode 等 70+ 编码 Agent，一条命令即可安装：
-```bash
-npx skills add Keyway-tech/gift-picker          # 项目级
-npx skills add Keyway-tech/gift-picker -g       # 全局级
-npx skills add Keyway-tech/gift-picker -a codex # 指定运行时
-```
-常用管理：`npx skills list` / `npx skills update` / `npx skills remove gift-picker`。
-
-### ⚠️ 跨运行时兼容性注意
-本 Skill 的**工作流逻辑（SKILL.md + references）是通用的**，但其中引用了若干 **WorkBuddy 专有能力**，在其他 Agent 中需作等价替换才能完整运行：
-
-| WorkBuddy 专有 | 在他处替换为 |
-|---|---|
-| `browser-use`（读取对方公开主页） | 目标 Agent 的浏览器 / 网页读取工具 |
-| `WebSearch` / 多搜索引擎 | 目标 Agent 的搜索工具 |
-| 交互式提问 `AskUserQuestion` | 目标 Agent 的提问 / 表单能力或直接对话追问 |
-| `present_files` 的 HTML 预览 | "写出 HTML 文件并交回用户" |
-| `scripts/profile_manager.py` 运行方式 | 保持用本地 Python 执行，路径自行调整 |
-
-若您仅需"参考工作流"在某 Agent 中复用，直接把 `SKILL.md` / `references/` 内容粘贴进对应 Agent 的 skill / 指令上下文即可。
-
----
-
-## 数据来源与费用（务必阅读）
-
-| 路径 | 费用 | 说明 |
-|---|---|---|
-| **全免费主路径** | 免费 | `browser-use` + `WebSearch`，用你**自己已登录**的浏览器读取公开主页 / 笔记 / 评论 / 比价。零依赖、开箱即用，满足"全免费"约束，无需任何密钥或付费账户。 |
-
-> 本 skill **不内置任何密钥**，也不依赖任何付费接口；分发包即为完整可用的免费版本。
-
----
-
-## 目录结构
-
-```
-gift-picker/
-├── SKILL.md                      # 主入口：工作流总控、硬性规则、资源索引
-├── README.md                     # 本文件
-├── LICENSE                       # 非商业许可（不可免费商用）
-├── .gitignore                    # 排除密钥与运行时数据
-├── TODO.md                       # 修复计划（40 条问题分阶段）
-├── references/
-│   ├── profile-schema.md         # 画像字段 + 获取策略 + 完整度算法
-│   ├── social-profiling.md       # 社媒 ID 一键画像流程与 7 维分析
-│   ├── data-sources.md           # 信息源策略 + 登录态协议 + 降级路径
-│   ├── scoring-model.md          # 五维评分 + 画像匹配 + 置信度
-│   ├── budget-advisor.md         # 预算智能建议系统
-│   ├── relationship-stages.md    # 六大关系阶段策略 + 明示触发词表
-│   ├── seasonal-guide.md         # 季节适配建议
-│   ├── flower-guide.md           # 花语与朵数建议
-│   └── memory-schema.md          # 中间数据 memory.json 结构与写入时机
-├── assets/
-│   └── report-template.html      # 礼物清单模板（卡片+Chart.js+比价表）
-└── scripts/
-    ├── profile_manager.py        # 画像读写/合并/校验/完整度/迁移
-    └── login_manager.py          # 登录态管理（基于 Playwright）
+```text
+💝 推荐商品
+─────────
+商品名：[品牌] [产品名]
+最终价格：¥[价格]
+购买链接：[商品详情页直链]
 ```
 
----
+## 工作方式
 
-## 隐私与合规
+1. 解析预算、场合和用户明确说出的偏好。
+2. 只有用户提供小红书或微博账号时，才读取公开的发布/转发、关注品牌和高粉美妆账号信号。
+3. 仅使用可复核的确定性信号，不推断肤质、风格或性格。
+4. 在实际操作前先检查社媒、商品搜索、详情页和比价能力。
+5. 商品检索优先使用免费第三方工具，其次使用用户已登录账号的浏览器网页端，最后才使用全网公开链接搜索。
+6. 价格无法实时确认时明确标注；详情页或正品依据无法验证时停止输出购买链接。
 
-- **仅分析公开内容**：不登录对方账号、不采集私密收藏 / 私信 / 联系方式 / 可精确定位信息。
-- **只读采集**：不做下单、加购、评论、点赞等任何写操作；不绕过风控；不使用他人账号。
-- **中间数据自清**：任务中间数据写在 skill 目录 `memory.md`，报告交付后自动删除；恋人画像存于用户目录，不随包外泄。
-- **免责声明**：本 skill 与小红书 / 微博 / B站 / 抖音 等平台**无隶属关系**；使用者须遵守各平台服务条款与所在地区法律法规；因使用本 skill 产生的任何行为后果由使用者自行承担。
+## 依赖与降级
 
----
+推荐使用 `assets/dependencies.json` 中列出的免费工具：
 
-## 许可
+- `cn-ecommerce-search`：预检通过后优先用于商品搜索和详情。
+- 用户已登录账号的浏览器网页端：第三方工具不可用时使用，执行前检查 Chrome 和平台登录态。
+- 公开搜索结果：最后降级使用，统一标注非实时。
+- `crawl4ai-skill`：动态页面补充抓取；失败时只使用可验证静态详情。
+- `xiaohongshu-skill`：小红书公开信号；登录、搜索或媒体预检失败时先暂停，用户选择后才可继续或放弃该平台数据。
 
-**非商业许可（Non-Commercial License）**——允许个人、非商业用途的使用、修改与再分发；**禁止任何商业使用**（含出售、转售、商业集成、商业再分发），商业使用须获得作者书面授权。详见 `LICENSE`。
+这些工具不是硬性可用前提。Skill 不无限重试、不绕过风控；没有可验证详情页时停止输出购买链接。
+
+## 隐私与安全
+
+- 所有中间状态只保留在当前会话，不写项目文件、用户记忆或临时文件。
+- 只读取公开内容，或复用用户已经打开的浏览器登录态。
+- 不读取或保存密码、Cookie、私信、收藏、联系方式和精确定位信息。
+- 不代用户登录、下单、联系商家或发布内容。
+
+## 静态资产
+
+- `assets/beauty-brands.json`：品牌档位和品类参考。
+- `assets/beauty-categories.json`：品类档位与降级链参考。
+- `assets/dependencies.json`：外部依赖、来源和费用条件。
+
+静态价格只用于档位参考，不代表实时售价。运行 `python scripts/validate_assets.py` 可检查资产结构和依赖声明。
+
+## 验证边界
+
+仓库验证包含 JSON 结构、引用完整性、敏感信息扫描和流程 dry-run。真实电商价格、库存、店铺资质和登录态依赖运行时环境，
+不能通过静态检查代替；没有真实运行证据时不会宣称活体验证通过。
+
+## License
+
+见 [`LICENSE`](LICENSE)。

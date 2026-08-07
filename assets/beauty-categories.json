@@ -1,0 +1,111 @@
+{
+  "version": "1.0",
+  "updated": "2026-08-05",
+  "description": "美妆护肤品类数据库，按决策难度与价格区间从高端(T1)到低端(T5)分级。用于礼物推荐时的品类优先级、降级路径与预算兜底。",
+
+  "tier_definition": {
+    "T1": {
+      "name": "重决策高单价品类",
+      "price_range_cny": "800-5000+",
+      "decision_difficulty": 5,
+      "description": "高单价、肤质敏感、对方偏好难判断，送礼门槛最高"
+    },
+    "T2": {
+      "name": "中高决策品类",
+      "price_range_cny": "400-2000",
+      "decision_difficulty": 4,
+      "description": "对方常用品牌敏感，需识别色号/肤质"
+    },
+    "T3": {
+      "name": "中等决策品类",
+      "price_range_cny": "200-800",
+      "decision_difficulty": 3,
+      "description": "决策门槛中等，可作 T1/T2 预算不足时的降级目标"
+    },
+    "T4": {
+      "name": "轻决策日常品类",
+      "price_range_cny": "100-400",
+      "decision_difficulty": 2,
+      "description": "日常消耗品，品牌敏感度低，送礼安全度高"
+    },
+    "T5": {
+      "name": "通用辅助品类",
+      "price_range_cny": "50-300",
+      "decision_difficulty": 1,
+      "description": "辅助或补品类，常作搭配赠品"
+    }
+  },
+
+  "categories": [
+    {"id": "essence", "name": "精华", "tier": "T1", "typical_price": "800-3000", "downgrade_to": "face_cream", "key_brands_count": 25, "notes": "高浓度活性成分，肤质匹配要求最高"},
+    {"id": "perfume_edp", "name": "浓香水(EDP)", "tier": "T1", "typical_price": "1000-3000", "downgrade_to": "perfume_edt", "key_brands_count": 30, "notes": "香调偏好极个人，需画像精准"},
+    {"id": "face_cream_luxe", "name": "高端面霜", "tier": "T1", "typical_price": "1500-5000", "downgrade_to": "face_cream", "key_brands_count": 15, "notes": "La Mer/HR/Sisley 级别，单价高"},
+    {"id": "serum_treatment", "name": "特殊护理精华", "tier": "T1", "typical_price": "1000-4000", "downgrade_to": "essence", "key_brands_count": 12, "notes": "抗老/美白/修护高阶精华"},
+
+    {"id": "face_cream", "name": "面霜", "tier": "T2", "typical_price": "400-1500", "downgrade_to": "lotion", "key_brands_count": 30, "notes": "早晚霜区分，肤质敏感"},
+    {"id": "eye_cream", "name": "眼霜", "tier": "T2", "typical_price": "400-1500", "downgrade_to": "neck_cream", "key_brands_count": 20, "notes": "抗老眼霜高客单"},
+    {"id": "lipstick", "name": "口红", "tier": "T2", "typical_price": "300-600", "downgrade_to": "lip_gloss", "key_brands_count": 35, "notes": "色号敏感，需画像颜色偏好"},
+    {"id": "foundation", "name": "粉底液", "tier": "T2", "typical_price": "400-1200", "downgrade_to": "cushion", "key_brands_count": 25, "notes": "色号+肤质双重匹配"},
+    {"id": "gift_set", "name": "节日限定礼盒", "tier": "T2", "typical_price": "800-2500", "downgrade_to": "travel_set", "key_brands_count": 20, "notes": "节日营销品，包装溢价高"},
+    {"id": "perfume_edt", "name": "淡香水(EDT)", "tier": "T2", "typical_price": "500-1500", "downgrade_to": "perfume_body_lotion", "key_brands_count": 30, "notes": "入门香水，浓度较低"},
+
+    {"id": "lotion", "name": "乳液", "tier": "T3", "typical_price": "200-800", "downgrade_to": "toner", "key_brands_count": 25, "notes": "肤质匹配中等敏感"},
+    {"id": "toner", "name": "爽肤水", "tier": "T3", "typical_price": "200-600", "downgrade_to": "cleanser", "key_brands_count": 25, "notes": "消耗品，决策门槛低"},
+    {"id": "mask", "name": "面膜", "tier": "T3", "typical_price": "150-600", "downgrade_to": "mask_single", "key_brands_count": 30, "notes": "片装/罐装，复购率高"},
+    {"id": "cushion", "name": "气垫", "tier": "T3", "typical_price": "300-600", "downgrade_to": "powder", "key_brands_count": 20, "notes": "色号+替换芯"},
+    {"id": "travel_set", "name": "品牌经典套装", "tier": "T3", "typical_price": "300-800", "downgrade_to": "sample_set", "key_brands_count": 25, "notes": "中样套装，体验装"},
+
+    {"id": "cleanser", "name": "洁面", "tier": "T4", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 25, "notes": "日常消耗品，安全度高"},
+    {"id": "sunscreen", "name": "防晒", "tier": "T4", "typical_price": "150-400", "downgrade_to": null, "key_brands_count": 20, "notes": "季节性需求强"},
+    {"id": "makeup_remover", "name": "卸妆", "tier": "T4", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 20, "notes": "油/水/膏质地选择"},
+    {"id": "body_lotion", "name": "身体乳", "tier": "T4", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 25, "notes": "香调+保湿双重需求"},
+    {"id": "hand_cream", "name": "护手霜", "tier": "T4", "typical_price": "50-300", "downgrade_to": null, "key_brands_count": 20, "notes": "常作搭配赠品"},
+    {"id": "powder", "name": "散粉/定妆粉", "tier": "T4", "typical_price": "150-400", "downgrade_to": null, "key_brands_count": 15, "notes": "色号不敏感"},
+
+    {"id": "mask_single", "name": "次抛面膜", "tier": "T5", "typical_price": "50-200", "downgrade_to": null, "key_brands_count": 15, "notes": "单次使用，低价"},
+    {"id": "lip_mask", "name": "唇膜", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 12, "notes": "夜间护理"},
+    {"id": "neck_cream", "name": "颈霜", "tier": "T5", "typical_price": "150-400", "downgrade_to": null, "key_brands_count": 10, "notes": "细分品类"},
+    {"id": "lip_gloss", "name": "唇釉", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 20, "notes": "色号多"},
+    {"id": "lip_balm", "name": "唇膏", "tier": "T5", "typical_price": "50-200", "downgrade_to": null, "key_brands_count": 15, "notes": "基础护理"},
+    {"id": "blush", "name": "腮红", "tier": "T5", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 18, "notes": "色号偏好"},
+    {"id": "highlighter", "name": "高光", "tier": "T5", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 12, "notes": "色号偏好"},
+    {"id": "contour", "name": "修容", "tier": "T5", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 10, "notes": "色号偏好"},
+    {"id": "eyeshadow", "name": "眼影", "tier": "T5", "typical_price": "150-600", "downgrade_to": null, "key_brands_count": 20, "notes": "盘装为主"},
+    {"id": "eyeliner", "name": "眼线", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 15, "notes": "笔/液/胶"},
+    {"id": "mascara", "name": "睫毛膏", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 15, "notes": "功效细分"},
+    {"id": "eyebrow", "name": "眉笔/眉粉", "tier": "T5", "typical_price": "50-200", "downgrade_to": null, "key_brands_count": 15, "notes": "色号匹配"},
+    {"id": "concealer", "name": "遮瑕", "tier": "T5", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 15, "notes": "色号+质地"},
+    {"id": "setting_spray", "name": "定妆喷雾", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 10, "notes": "辅助定妆"},
+    {"id": "perfume_body_lotion", "name": "香氛身体乳", "tier": "T5", "typical_price": "150-500", "downgrade_to": null, "key_brands_count": 15, "notes": "香水延伸品"},
+    {"id": "scented_candle", "name": "香薰蜡烛", "tier": "T5", "typical_price": "150-600", "downgrade_to": null, "key_brands_count": 20, "notes": "家居香氛"},
+    {"id": "room_fragrance", "name": "室内香氛", "tier": "T5", "typical_price": "150-600", "downgrade_to": null, "key_brands_count": 15, "notes": "藤条/喷雾"},
+    {"id": "perfume_parfum", "name": "香精(Parfum)", "tier": "T5", "typical_price": "1500-4000", "downgrade_to": null, "key_brands_count": 10, "notes": "最高浓度，留香最久"},
+    {"id": "foot_cream", "name": "足霜", "tier": "T5", "typical_price": "80-250", "downgrade_to": null, "key_brands_count": 8, "notes": "细分品类"},
+    {"id": "body_scrub", "name": "身体磨砂", "tier": "T5", "typical_price": "100-400", "downgrade_to": null, "key_brands_count": 12, "notes": "周期护理"},
+    {"id": "face_oil", "name": "面部精油", "tier": "T5", "typical_price": "200-600", "downgrade_to": null, "key_brands_count": 10, "notes": "偏油性护理"},
+    {"id": "exfoliator", "name": "去角质", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 12, "notes": "周期护理"},
+    {"id": "lip_liner", "name": "唇线笔", "tier": "T5", "typical_price": "50-200", "downgrade_to": null, "key_brands_count": 8, "notes": "辅助彩妆"},
+    {"id": "brow_powder", "name": "眉粉", "tier": "T5", "typical_price": "50-200", "downgrade_to": null, "key_brands_count": 10, "notes": "眉部彩妆"},
+    {"id": "sample_set", "name": "小样体验装", "tier": "T5", "typical_price": "50-300", "downgrade_to": null, "key_brands_count": 30, "notes": "中样/体验装"},
+    {"id": "shower_gel", "name": "沐浴露", "tier": "T5", "typical_price": "80-300", "downgrade_to": null, "key_brands_count": 15, "notes": "日常消耗"}
+  ],
+
+  "downgrade_chain_examples": [
+    "essence → face_cream → lotion → toner → cleanser",
+    "eye_cream → neck_cream",
+    "lipstick → lip_gloss → lip_balm",
+    "foundation → cushion → powder",
+    "perfume_edp → perfume_edt → perfume_body_lotion → scented_candle",
+    "mask → mask_single",
+    "gift_set → travel_set → sample_set",
+    "face_cream_luxe → face_cream → lotion"
+  ],
+
+  "category_groups": {
+    "skincare": ["essence", "face_cream_luxe", "face_cream", "lotion", "toner", "cleanser", "sunscreen", "makeup_remover", "eye_cream", "neck_cream", "mask", "mask_single", "face_oil", "exfoliator", "serum_treatment"],
+    "makeup": ["foundation", "cushion", "concealer", "powder", "setting_spray", "blush", "highlighter", "contour", "eyeshadow", "eyeliner", "mascara", "eyebrow", "brow_powder", "lipstick", "lip_gloss", "lip_balm", "lip_mask", "lip_liner"],
+    "fragrance": ["perfume_edp", "perfume_edt", "perfume_parfum", "perfume_body_lotion", "scented_candle", "room_fragrance"],
+    "body_care": ["body_lotion", "shower_gel", "hand_cream", "foot_cream", "body_scrub"],
+    "gift_set": ["gift_set", "travel_set", "sample_set"]
+  }
+}
